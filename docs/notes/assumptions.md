@@ -44,8 +44,29 @@
 
 ---
 
-## Phase 2 (Ticket-02)
-*(Chưa phát hành)*
+## Phase 2 (Ticket-02 · "Ba hòn đảo" & Test Contract v1.1)
+
+### Giải trình thay thế & Giả định biên cho Contract v1.1
+1. **Thay thế bộ số liệu & test từ Phase 1 (theo yêu cầu chuẩn hóa Phần 1 của Ticket-02):**
+   - `carry_capacity`: đổi từ `8` → `10`; `lantern_cost`: đổi từ `3` → `10`; `pickup_radius`: `2.4` → `1.0`; `interact_radius`: `3.0` → `2.0`; `pulse_cost`: `1` → `3`; `pulse_radius`: `6` → `5`; `pulse_stun_s`: `3` → `2`; `pulse_cooldown_s`: `1` → `3`; `safe_radius`: `5` → `6`; `shade_speed`: `3.5` → `4.0` (Đêm 3: `4.5`); `shade_hit_radius`: `1.2` → `1.0`; `fall_enabled`: `false` → `true`; `per_stun`: `25` → `5`; `per_second_left`: `0` → `2`.
+   - **Cập nhật test & scenario cũ:** Cập nhật `tests/core.test.ts`, `p1-collect-and-light` và `p1-pulse-and-win` theo đúng bộ số liệu chuẩn v1.1 và thứ tự 12 bước mới (`+10` điểm cộng tại bước `deposit` thay vì lúc nhặt, cộng thêm các trường `night`, `wind`, `vel`, `grounded`, `invuln`, `dash_cd_s`, `pulse_cd_s`, `charm_s`, `drifters`, `charms` trong snapshot).
+2. **Giả định biên được quy ước rõ (theo hướng dẫn Trợ giảng Phase 2):**
+   - **`scenario.shades` mặc định `state`:** Nếu `scenario.shades[]` không truyền trường `state`, tự động đặt `chase` nếu khoảng cách XZ tới Mây `<= 12m`, ngược lại đặt `wander`. Bóng Mực mới sinh theo lịch ở Bước 10 mang `state: "spawning"` trong `1` tick rồi chuyển sang `wander`/`chase` từ tick sau.
+   - **Điểm `+10` mỗi đom đóm nạp:** Cộng `+10` tại Bước 5 (`deposit`) nhân với số lượng `amount` vừa nạp; khóa `tuning.score.per_mote` giữ nguyên giá trị `10`.
+   - **Sự kiện `night_start {night}`:** Phát đúng 1 lần ở `tick = 1` (khi `sim_tick` bắt đầu bước đầu tiên của Đêm).
+   - **Lịch Gió mạnh Đêm 3:** Lặp theo chu kỳ `1800` tick (`30s`): tại `sim_tick % 1800 === 1680` (trước `2s`) bật cảnh báo lá bay/âm thanh và chốt hướng ngẫu nhiên `dir_deg` từ PRNG tất định; tại `sim_tick % 1800 === 0` (`1800, 3600, ...`) bật `wind.active = true` kéo dài `300` tick (`5s`), đẩy người chơi `2 m/s`.
+
+### Bảng truy vết Yêu cầu Phase 2 (Acceptance Criteria) → Kiểm chứng
+
+| ID | Yêu cầu Ticket-02 / Contract v1.1 | Tiêu chí nghiệm thu kiểm chứng được | Bằng chứng |
+|---|---|---|---|
+| P2-R1 | Số liệu chuẩn & `game.contract.json` v1.1 | `contract_version === "1.1"`, toàn bộ `tuning` khớp `DEFAULT_TUNING` | `tests/core.test.ts` |
+| P2-R2 | Thứ tự 12 bước mỗi tick & Tạm dừng (`pause`) | `pause` đóng băng `sim_tick`, `time_left_s`, timers trong khi `tick` vẫn tăng và `state === "paused"` | `tests/core.test.ts`, `p2-night3-tiers-wind-pause` |
+| P2-R3 | Lướt (`dash`) & Bùa Gió (`C1`, `C2`) | Lướt `14 m/s` trong `12` tick giữ nguyên Y, hồi `90` tick; Bùa Gió cho `7.2 m/s` + lướt 0 hồi chiêu `600` tick | `tests/core.test.ts`, `p2-dash-and-charm` |
+| P2-R4 | Gió Lạc (`drifters`) cướp & thả | `carried >= 5` & `<= 15m` -> `chase`, cướp tối đa `3`, trúng Pulse khi `flee` -> `drifter_drop` | `tests/core.test.ts`, `p2-drifter-steal-and-drop` |
+| P2-R5 | Địa hình 3 Đêm, Bục nhảy, Gió mạnh, Rơi (`Y<-10`) | Đêm 2 bục nhảy qua Đảo B, rơi cầu mất `1` Ngọn Lửa + hết đom đóm, hồi sinh sau `60` tick; Đêm 3 dốc/tầng/Tháp Chuông/gió | `tests/core.test.ts`, `p2-night2-*`, `p2-night3-*` |
+| P2-R6 | Chuỗi 3 Đêm, HUD 10 ô, Cài đặt bền vững, Bảng màu & Âm thanh | Menu → Ông Đăng → Đêm 1–3 → Bình Minh; `localStorage` lưu settings; ánh sáng `0.15 + 0.55*ratio`; mũi tên đèn ngoài màn hình | `src/render/`, kiểm thử Chrome tại `localhost:5173` |
+| P2-R7 | Hiệu năng Headless (`<= 30s`) & 3D (`>= 30 FPS`) | Chạy `21.600` tick Đêm 3 `< 30.000 ms`; chơi 1280×720 đạt `>= 30 FPS` | `docs/proof/phase-2-verification.md`, đo FPS trình duyệt |
 
 ## Phase 3 (Ticket-03)
 *(Chưa phát hành)*
