@@ -116,13 +116,33 @@ export class GameScene {
   });
   private readonly shadowGeo = new THREE.ConeGeometry(0.65, 1.9, 12);
   private readonly drainBeamsGroup = new THREE.Group();
-  private readonly effects: IslandEffects;
+  private readonly effects: IslandEffects | null;
   private readonly container: HTMLElement;
+  private readonly benchmarkMode: boolean;
+  private readonly benchShadeMat = new THREE.MeshStandardMaterial({
+    color: 0x120a1a,
+    emissive: 0x7a3cff,
+    emissiveIntensity: 0.9,
+    roughness: 0.35,
+  });
+  private readonly tmpTargetCamPos = new THREE.Vector3();
+  private readonly bgDarkColor = new THREE.Color(0x0e1430);
+  private readonly bgLitColor = new THREE.Color(0x1f2855);
+  private readonly tmpBgColor = new THREE.Color(0x0e1430);
+  private benchShadeInstanced: THREE.InstancedMesh | null = null;
+  private benchMoteInstanced: THREE.InstancedMesh | null = null;
+  private benchMoteRingInstanced: THREE.InstancedMesh | null = null;
+  private readonly tmpMatrix = new THREE.Matrix4();
+  private readonly tmpPos = new THREE.Vector3();
+  private readonly tmpQuat = new THREE.Quaternion();
+  private readonly tmpScale = new THREE.Vector3(1, 1, 1);
+  private readonly tmpRingQuat = new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI / 2, 0, 0));
 
-  constructor(container: HTMLElement, initialWorld: WorldState) {
+  constructor(container: HTMLElement, initialWorld: WorldState, benchmarkMode = false) {
     this.container = container;
+    this.benchmarkMode = benchmarkMode;
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x0e1430);
+    this.scene.background = this.tmpBgColor;
     this.scene.fog = new THREE.FogExp2(0x1b2350, 0.018);
 
     const width = container.clientWidth || window.innerWidth;
@@ -131,9 +151,13 @@ export class GameScene {
     this.camera.position.set(0, 8.5, 11.5);
 
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer.setPixelRatio(benchmarkMode ? 1 : Math.min(window.devicePixelRatio, 2));
     this.renderer.setSize(width, height);
     this.renderer.shadowMap.enabled = true;
+    if (benchmarkMode) {
+      this.renderer.shadowMap.autoUpdate = false;
+      this.renderer.shadowMap.needsUpdate = true;
+    }
     container.appendChild(this.renderer.domElement);
 
     // Exact ambient curve: 0.15 + 0.55 * (lit / total)
@@ -205,11 +229,22 @@ export class GameScene {
 
     this.scene.add(this.playerGroup);
 
-    this.effects = new IslandEffects(this.scene, 200, 44);
+    this.effects = this.benchmarkMode ? null : new IslandEffects(this.scene, 200, 44);
     this.scene.add(this.drainBeamsGroup);
-    this.loadAssets();
+    if (!this.benchmarkMode) {
+      this.loadAssets();
+    }
     this.syncEntities(initialWorld);
     window.addEventListener('resize', this.handleResize);
+  }
+
+  getRendererDescription(): string {
+    const gl = this.renderer.getContext();
+    const debugExt = gl.getExtension('WEBGL_debug_renderer_info');
+    const raw = debugExt
+      ? (gl.getParameter(debugExt.UNMASKED_RENDERER_WEBGL) as string | null)
+      : (gl.getParameter(gl.RENDERER) as string | null);
+    return `${raw || 'WebGL2'} (Three.js r${THREE.REVISION})`;
   }
 
   private buildTerrainForNight(night: NightNumber): void {
@@ -501,45 +536,75 @@ export class GameScene {
   };
 
   private syncEntities(world: WorldState): void {
-    // Sync motes (create missing, remove despawned/picked)
-    const activeMoteIds = new Set(world.motes.map((m) => m.id));
-    for (const [id, vis] of this.moteVisuals.entries()) {
-      if (!activeMoteIds.has(id)) {
-        this.scene.remove(vis.group);
-        this.moteVisuals.delete(id);
+    if (this.benchmarkMode) {
+      if (!this.benchMoteInstanced) {
+        this.benchMoteInstanced = new THREE.InstancedMesh(
+          this.moteGeo,
+          this.moteMat,
+          Math.max(1, world.motes.length),
+        );
+        this.benchMoteInstanced.frustumCulled = false;
+        this.scene.add(this.benchMoteInstanced);
       }
-    }
+      if (!this.benchMoteRingInstanced) {
+        this.benchMoteRingInstanced = new THREE.InstancedMesh(
+          this.ringGeo,
+          this.ringMat,
+          Math.max(1, world.motes.length),
+        );
+        this.benchMoteRingInstanced.frustumCulled = false;
+        this.scene.add(this.benchMoteRingInstanced);
+      }
+      if (!this.benchShadeInstanced) {
+        this.benchShadeInstanced = new THREE.InstancedMesh(
+          this.shadowGeo,
+          this.benchShadeMat,
+          Math.max(1, world.shades.length),
+        );
+        this.benchShadeInstanced.frustumCulled = false;
+        this.scene.add(this.benchShadeInstanced);
+      }
+    } else {
+      // Sync motes (create missing, remove despawned/picked)
+      const activeMoteIds = new Set(world.motes.map((m) => m.id));
+      for (const [id, vis] of this.moteVisuals.entries()) {
+        if (!activeMoteIds.has(id)) {
+          this.scene.remove(vis.group);
+          this.moteVisuals.delete(id);
+        }
+      }
 
-    for (const m of world.motes) {
-      if (!this.moteVisuals.has(m.id)) {
-        const group = new THREE.Group();
-        group.position.set(m.pos[0], m.pos[1], m.pos[2]);
+      for (const m of world.motes) {
+        if (!this.moteVisuals.has(m.id)) {
+          const group = new THREE.Group();
+          group.position.set(m.pos[0], m.pos[1], m.pos[2]);
 
-        const orb = new THREE.Mesh(this.moteGeo, this.moteMat);
-        orb.position.y = 0.85;
+          const orb = new THREE.Mesh(this.moteGeo, this.moteMat);
+          orb.position.y = 0.85;
 
-        const spriteMat = new THREE.SpriteMaterial({
-          map: this.sparkTexture,
-          color: 0xffe58a,
-          transparent: true,
-          opacity: 0.9,
-          blending: THREE.AdditiveBlending,
-          depthWrite: false,
-        });
-        const sprite = new THREE.Sprite(spriteMat);
-        sprite.scale.set(1.35, 1.35, 1);
-        sprite.position.y = 0.85;
+          const spriteMat = new THREE.SpriteMaterial({
+            map: this.sparkTexture,
+            color: 0xffe58a,
+            transparent: true,
+            opacity: 0.9,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false,
+          });
+          const sprite = new THREE.Sprite(spriteMat);
+          sprite.scale.set(1.35, 1.35, 1);
+          sprite.position.y = 0.85;
 
-        const groundRing = new THREE.Mesh(this.ringGeo, this.ringMat);
-        groundRing.rotation.x = -Math.PI / 2;
-        groundRing.position.y = 0.04;
+          const groundRing = new THREE.Mesh(this.ringGeo, this.ringMat);
+          groundRing.rotation.x = -Math.PI / 2;
+          groundRing.position.y = 0.04;
 
-        const beam = new THREE.Mesh(this.beamGeo, this.beamMat);
-        beam.position.y = 0.45;
+          const beam = new THREE.Mesh(this.beamGeo, this.beamMat);
+          beam.position.y = 0.45;
 
-        group.add(orb, sprite, groundRing, beam);
-        this.scene.add(group);
-        this.moteVisuals.set(m.id, { group, orb, sprite, beam });
+          group.add(orb, sprite, groundRing, beam);
+          this.scene.add(group);
+          this.moteVisuals.set(m.id, { group, orb, sprite, beam });
+        }
       }
     }
 
@@ -635,29 +700,38 @@ export class GameScene {
     this.attachLanternAssets();
 
     // Shades (#120A1A body, #7A3CFF rim/emissive)
-    for (const s of world.shades) {
-      if (!this.shadeVisuals.has(s.id)) {
-        const group = new THREE.Group();
-        const inkMaterial = new THREE.MeshStandardMaterial({
-          color: 0x120a1a,
-          emissive: 0x7a3cff,
-          emissiveIntensity: 0.9,
-          roughness: 0.35,
-        });
-        const fallbackMesh = new THREE.Mesh(this.shadowGeo, inkMaterial);
-        fallbackMesh.position.y = 0.95;
-        fallbackMesh.castShadow = true;
-        group.add(fallbackMesh);
-        this.scene.add(group);
-        this.shadeVisuals.set(s.id, {
-          group,
-          fallbackMesh,
-          modelAttached: false,
-          inkMaterial,
-        });
+    if (!this.benchmarkMode) {
+      const activeShadeIds = new Set(world.shades.map((s) => s.id));
+      for (const [id, vis] of this.shadeVisuals.entries()) {
+        if (!activeShadeIds.has(id)) {
+          this.scene.remove(vis.group);
+          this.shadeVisuals.delete(id);
+        }
       }
+      for (const s of world.shades) {
+        if (!this.shadeVisuals.has(s.id)) {
+          const group = new THREE.Group();
+          const inkMaterial = new THREE.MeshStandardMaterial({
+            color: 0x120a1a,
+            emissive: 0x7a3cff,
+            emissiveIntensity: 0.9,
+            roughness: 0.35,
+          });
+          const fallbackMesh = new THREE.Mesh(this.shadowGeo, inkMaterial);
+          fallbackMesh.position.y = 0.95;
+          fallbackMesh.castShadow = true;
+          group.add(fallbackMesh);
+          this.scene.add(group);
+          this.shadeVisuals.set(s.id, {
+            group,
+            fallbackMesh,
+            modelAttached: false,
+            inkMaterial,
+          });
+        }
+      }
+      this.attachShadeAssets();
     }
-    this.attachShadeAssets();
 
     // Drifters (Gió Lạc #8FA3B8 flowing ribbon)
     const activeDrifterIds = new Set(world.drifters.map((d) => d.id));
@@ -736,7 +810,13 @@ export class GameScene {
     return { x, y, onScreen };
   }
 
-  render(world: WorldState, camYawDeg: number, colorblindMode = false): void {
+  render(
+    world: WorldState,
+    camYawDeg: number,
+    colorblindMode = false,
+    reducedMotion = false,
+    benchCameraAngleRad?: number,
+  ): void {
     if (world.night !== this.currentNight) {
       this.clearAllEntityVisuals();
       this.buildTerrainForNight(world.night);
@@ -776,17 +856,35 @@ export class GameScene {
       pulseMat.opacity = 0;
     }
 
-    for (const m of world.motes) {
-      const vis = this.moteVisuals.get(m.id);
-      if (vis) {
-        vis.group.position.set(m.pos[0], m.pos[1], m.pos[2]);
-        const bobY = 0.85 + Math.sin(timeSec * 3.2 + m.pos[0]) * 0.16;
-        vis.orb.position.y = bobY;
-        vis.sprite.position.y = bobY;
+    if (this.benchmarkMode && this.benchMoteInstanced && this.benchMoteRingInstanced) {
+      this.benchMoteInstanced.count = world.motes.length;
+      this.benchMoteRingInstanced.count = world.motes.length;
+      for (let i = 0; i < world.motes.length; i++) {
+        const m = world.motes[i];
+        const bobY = m.pos[1] + 0.85 + Math.sin(timeSec * 3.2 + m.pos[0]) * 0.16;
+        this.tmpPos.set(m.pos[0], bobY, m.pos[2]);
+        this.tmpMatrix.compose(this.tmpPos, this.tmpQuat, this.tmpScale);
+        this.benchMoteInstanced.setMatrixAt(i, this.tmpMatrix);
+
+        this.tmpPos.set(m.pos[0], m.pos[1] + 0.04, m.pos[2]);
+        this.tmpMatrix.compose(this.tmpPos, this.tmpRingQuat, this.tmpScale);
+        this.benchMoteRingInstanced.setMatrixAt(i, this.tmpMatrix);
+      }
+      this.benchMoteInstanced.instanceMatrix.needsUpdate = true;
+      this.benchMoteRingInstanced.instanceMatrix.needsUpdate = true;
+    } else {
+      for (const m of world.motes) {
+        const vis = this.moteVisuals.get(m.id);
+        if (vis) {
+          vis.group.position.set(m.pos[0], m.pos[1], m.pos[2]);
+          const bobY = 0.85 + Math.sin(timeSec * 3.2 + m.pos[0]) * 0.16;
+          vis.orb.position.y = bobY;
+          vis.sprite.position.y = bobY;
+        }
       }
     }
 
-    const blinkOn = Math.sin(timeSec * Math.PI * 2) >= 0; // 1 Hz slow blink
+    const blinkOn = reducedMotion ? true : Math.sin(timeSec * Math.PI * 2) >= 0; // 1 Hz slow blink unless reducedMotion
     const shadeActiveHex = colorblindMode ? 0x00b3ff : 0x7a3cff;
     const drainingLanternIds = new Set(
       world.shades.filter((s) => s.state === 'drain' && s.target_lantern_id).map((s) => s.target_lantern_id as string),
@@ -799,7 +897,7 @@ export class GameScene {
       if (vis) {
         const fuelVal = l.fuel_ticks / 60;
         const isDrained = drainingLanternIds.has(l.id);
-        const shakeX = isDrained ? Math.sin(timeSec * 42) * 0.05 : 0;
+        const shakeX = isDrained && !reducedMotion ? Math.sin(timeSec * 42) * 0.05 : 0;
         vis.group.position.set(l.pos[0] + shakeX, l.pos[1], l.pos[2]);
 
         const ringMat = vis.safeRing.material as THREE.MeshBasicMaterial;
@@ -850,61 +948,72 @@ export class GameScene {
       child.geometry.dispose();
       (child.material as THREE.Material).dispose();
     }
-    for (const s of world.shades) {
-      if (s.state === 'drain' && s.target_lantern_id) {
-        const targetL = world.lanterns.find((l) => l.id === s.target_lantern_id);
-        if (targetL) {
-          const pts = [
-            new THREE.Vector3(s.pos[0], s.pos[1] + 0.9, s.pos[2]),
-            new THREE.Vector3(targetL.pos[0], targetL.pos[1] + 2.6, targetL.pos[2]),
-          ];
-          const lineGeo = new THREE.BufferGeometry().setFromPoints(pts);
-          const lineMat = new THREE.LineBasicMaterial({ color: shadeActiveHex });
-          this.drainBeamsGroup.add(new THREE.Line(lineGeo, lineMat));
-        }
+    if (this.benchmarkMode && this.benchShadeInstanced) {
+      this.benchShadeInstanced.count = world.shades.length;
+      for (let i = 0; i < world.shades.length; i++) {
+        const s = world.shades[i];
+        this.tmpPos.set(s.pos[0], s.pos[1] + 0.95, s.pos[2]);
+        this.tmpMatrix.compose(this.tmpPos, this.tmpQuat, this.tmpScale);
+        this.benchShadeInstanced.setMatrixAt(i, this.tmpMatrix);
       }
+      this.benchShadeInstanced.instanceMatrix.needsUpdate = true;
+    } else {
+      for (const s of world.shades) {
+        if (s.state === 'drain' && s.target_lantern_id) {
+          const targetL = world.lanterns.find((l) => l.id === s.target_lantern_id);
+          if (targetL) {
+            const pts = [
+              new THREE.Vector3(s.pos[0], s.pos[1] + 0.9, s.pos[2]),
+              new THREE.Vector3(targetL.pos[0], targetL.pos[1] + 2.6, targetL.pos[2]),
+            ];
+            const lineGeo = new THREE.BufferGeometry().setFromPoints(pts);
+            const lineMat = new THREE.LineBasicMaterial({ color: shadeActiveHex });
+            this.drainBeamsGroup.add(new THREE.Line(lineGeo, lineMat));
+          }
+        }
 
-      const vis = this.shadeVisuals.get(s.id);
-      if (vis) {
-        vis.group.position.set(s.pos[0], s.pos[1], s.pos[2]);
-        if (s.state === 'stunned') {
-          vis.group.scale.setScalar(0.75);
-          vis.inkMaterial.color.setHex(0x3a3450);
-          vis.inkMaterial.emissive.setHex(0x3a3450);
-          vis.inkMaterial.emissiveIntensity = 0.45;
-          if (vis.idleAction && vis.runAction && vis.currentClip !== 'idle') {
-            vis.runAction.stop();
-            vis.idleAction.play();
-            vis.currentClip = 'idle';
-          }
-        } else {
-          vis.group.scale.setScalar(s.state === 'spawning' ? 0.5 : 1.0);
-          vis.inkMaterial.color.setHex(0x120a1a);
-          vis.inkMaterial.emissive.setHex(shadeActiveHex);
-          vis.inkMaterial.emissiveIntensity = s.state === 'drain' ? 1.4 : 0.95;
-          const lookTarget =
-            s.state === 'drain' && s.target_lantern_id
-              ? world.lanterns.find((l) => l.id === s.target_lantern_id)?.pos ?? world.player.pos
-              : world.player.pos;
-          const dx = lookTarget[0] - s.pos[0];
-          const dz = lookTarget[2] - s.pos[2];
-          if (Math.hypot(dx, dz) > 0.05) {
-            vis.group.rotation.y = Math.atan2(dx, dz);
-          }
-          const wantClip = s.state === 'drain' ? 'idle' : 'run';
-          if (vis.runAction && vis.idleAction && world.state === 'playing' && vis.currentClip !== wantClip) {
-            if (wantClip === 'idle') {
+        const vis = this.shadeVisuals.get(s.id);
+        if (vis) {
+          vis.group.position.set(s.pos[0], s.pos[1], s.pos[2]);
+          if (s.state === 'stunned') {
+            vis.group.scale.setScalar(0.75);
+            vis.inkMaterial.color.setHex(0x3a3450);
+            vis.inkMaterial.emissive.setHex(0x3a3450);
+            vis.inkMaterial.emissiveIntensity = 0.45;
+            if (vis.idleAction && vis.runAction && vis.currentClip !== 'idle') {
               vis.runAction.stop();
               vis.idleAction.play();
-            } else {
-              vis.idleAction.stop();
-              vis.runAction.play();
+              vis.currentClip = 'idle';
             }
-            vis.currentClip = wantClip;
+          } else {
+            vis.group.scale.setScalar(s.state === 'spawning' ? 0.5 : 1.0);
+            vis.inkMaterial.color.setHex(0x120a1a);
+            vis.inkMaterial.emissive.setHex(shadeActiveHex);
+            vis.inkMaterial.emissiveIntensity = s.state === 'drain' ? 1.4 : 0.95;
+            const lookTarget =
+              s.state === 'drain' && s.target_lantern_id
+                ? world.lanterns.find((l) => l.id === s.target_lantern_id)?.pos ?? world.player.pos
+                : world.player.pos;
+            const dx = lookTarget[0] - s.pos[0];
+            const dz = lookTarget[2] - s.pos[2];
+            if (Math.hypot(dx, dz) > 0.05) {
+              vis.group.rotation.y = Math.atan2(dx, dz);
+            }
+            const wantClip = s.state === 'drain' ? 'idle' : 'run';
+            if (vis.runAction && vis.idleAction && world.state === 'playing' && vis.currentClip !== wantClip) {
+              if (wantClip === 'idle') {
+                vis.runAction.stop();
+                vis.idleAction.play();
+              } else {
+                vis.idleAction.stop();
+                vis.runAction.play();
+              }
+              vis.currentClip = wantClip;
+            }
           }
-        }
-        if (vis.mixer && world.state === 'playing') {
-          vis.mixer.update(dt);
+          if (vis.mixer && world.state === 'playing') {
+            vis.mixer.update(dt);
+          }
         }
       }
     }
@@ -927,33 +1036,48 @@ export class GameScene {
     }
 
     const ratio = world.lanterns.length > 0 ? litCount / world.lanterns.length : 0;
-    this.effects.update(timeSec, ratio, world.wind);
+    if (this.effects) {
+      this.effects.update(timeSec, ratio, world.wind);
+    }
 
     // Environmental light formula: 0.15 + 0.55 * (lit / total)
     this.ambientLight.intensity = 0.15 + 0.55 * ratio;
-    const bg = new THREE.Color(0x0e1430).lerp(new THREE.Color(0x1f2855), ratio);
-    this.scene.background = bg;
+    this.tmpBgColor.copy(this.bgDarkColor).lerp(this.bgLitColor, ratio);
+    this.scene.background = this.tmpBgColor;
     const fog = this.scene.fog as THREE.FogExp2;
     fog.color.setHex(0x1b2350);
     fog.density = 0.02 - ratio * 0.008;
 
-    const theta = (camYawDeg * Math.PI) / 180;
-    const camDist = 11.5;
-    const camHeight = 8.0;
-    const targetCamPos = new THREE.Vector3(
-      world.player.pos[0] + Math.sin(theta) * camDist,
-      world.player.pos[1] + camHeight,
-      world.player.pos[2] + Math.cos(theta) * camDist,
-    );
-    this.camera.position.lerp(targetCamPos, 0.18);
-    this.camera.lookAt(world.player.pos[0], world.player.pos[1] + 1.0, world.player.pos[2]);
+    if (benchCameraAngleRad !== undefined) {
+      // Orbit center (0,0,0), radius 30m, Y=15m, CCW from above starting at (30,15,0)
+      this.camera.position.set(
+        30 * Math.cos(benchCameraAngleRad),
+        15,
+        -30 * Math.sin(benchCameraAngleRad),
+      );
+      this.camera.lookAt(0, 0, 0);
+    } else {
+      const theta = (camYawDeg * Math.PI) / 180;
+      const camDist = 11.5;
+      const camHeight = 8.0;
+      this.tmpTargetCamPos.set(
+        world.player.pos[0] + Math.sin(theta) * camDist,
+        world.player.pos[1] + camHeight,
+        world.player.pos[2] + Math.cos(theta) * camDist,
+      );
+      this.camera.position.lerp(this.tmpTargetCamPos, reducedMotion ? 1.0 : 0.18);
+      this.camera.lookAt(world.player.pos[0], world.player.pos[1] + 1.0, world.player.pos[2]);
+    }
 
     this.renderer.render(this.scene, this.camera);
   }
 
   dispose(): void {
     window.removeEventListener('resize', this.handleResize);
-    this.effects.dispose();
+    if (this.effects) {
+      this.effects.dispose();
+    }
+    this.benchShadeMat.dispose();
     this.grassTexture.dispose();
     this.sparkTexture.dispose();
     this.renderer.dispose();
