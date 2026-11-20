@@ -81,9 +81,15 @@ export class ProceduralAudio {
         this.playTone(587.33, 0.25, 'triangle', vol * 0.1, 880);
       } else if (ev.name === 'deposit') {
         this.playTone(440, 0.16, 'triangle', vol * 0.09, 587.33);
+      } else if (ev.name === 'refuel') {
+        this.playTone(493.88, 0.18, 'sine', vol * 0.1, 659.25);
       } else if (ev.name === 'lantern_lit') {
         this.playTone(392, 0.42, 'triangle', vol * 0.12, 587.33);
         this.playTone(587.33, 0.5, 'sine', vol * 0.1, 783.99);
+      } else if (ev.name === 'lantern_out') {
+        this.playTone(260, 0.4, 'triangle', vol * 0.1, 130);
+      } else if (ev.name === 'fuel_drain') {
+        this.playTone(170, 0.18, 'sawtooth', vol * 0.05, 140);
       } else if (ev.name === 'pulse') {
         this.playTone(540, 0.3, 'sine', vol * 0.12, 210);
       } else if (ev.name === 'dash') {

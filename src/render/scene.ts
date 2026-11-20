@@ -7,6 +7,11 @@ import { IslandEffects } from './effects.js';
 
 interface LanternVisual {
   group: THREE.Group;
+  bodyGroup: THREE.Group;
+  tearGroup: THREE.Group;
+  fuelBarGroup: THREE.Group;
+  fuelBarFill: THREE.Mesh;
+  fuelBarMat: THREE.MeshBasicMaterial;
   orbMat: THREE.MeshStandardMaterial;
   coreMesh: THREE.Mesh;
   light: THREE.PointLight;
@@ -110,6 +115,7 @@ export class GameScene {
     depthWrite: false,
   });
   private readonly shadowGeo = new THREE.ConeGeometry(0.65, 1.9, 12);
+  private readonly drainBeamsGroup = new THREE.Group();
   private readonly effects: IslandEffects;
   private readonly container: HTMLElement;
 
@@ -200,6 +206,7 @@ export class GameScene {
     this.scene.add(this.playerGroup);
 
     this.effects = new IslandEffects(this.scene, 200, 44);
+    this.scene.add(this.drainBeamsGroup);
     this.loadAssets();
     this.syncEntities(initialWorld);
     window.addEventListener('resize', this.handleResize);
@@ -536,14 +543,17 @@ export class GameScene {
       }
     }
 
-    // Lanterns
+    // Lanterns (bodyGroup collapses 20% + shows tears when unlit; fuelBarGroup shows fuel above lit lanterns)
     for (const l of world.lanterns) {
       if (!this.lanternVisuals.has(l.id)) {
         const group = new THREE.Group();
         group.position.set(l.pos[0], l.pos[1], l.pos[2]);
 
+        const bodyGroup = new THREE.Group();
+        group.add(bodyGroup);
+
         const modelSlot = new THREE.Group();
-        group.add(modelSlot);
+        bodyGroup.add(modelSlot);
 
         const pedestal = new THREE.Mesh(
           new THREE.CylinderGeometry(0.65, 0.85, 0.35, 8),
@@ -551,7 +561,7 @@ export class GameScene {
         );
         pedestal.position.y = 0.17;
         pedestal.receiveShadow = true;
-        group.add(pedestal);
+        bodyGroup.add(pedestal);
 
         const orbMat = new THREE.MeshStandardMaterial({
           color: 0x5b5f6e,
@@ -560,7 +570,33 @@ export class GameScene {
         });
         const coreMesh = new THREE.Mesh(new THREE.OctahedronGeometry(0.42, 1), orbMat);
         coreMesh.position.y = 2.65;
-        group.add(coreMesh);
+        bodyGroup.add(coreMesh);
+
+        // Ripped paper / dark jagged marks visible when lantern is unlit (non-color cue)
+        const tearGroup = new THREE.Group();
+        const tearMat = new THREE.MeshBasicMaterial({ color: 0x120a1a, side: THREE.DoubleSide });
+        for (let t = 0; t < 3; t++) {
+          const strip = new THREE.Mesh(new THREE.PlaneGeometry(0.24, 0.72), tearMat);
+          const ang = (t / 3) * Math.PI * 2;
+          strip.position.set(Math.cos(ang) * 0.45, 2.55, Math.sin(ang) * 0.45);
+          strip.rotation.y = -ang + Math.PI / 2;
+          strip.rotation.z = 0.28 * (t % 2 === 0 ? 1 : -1);
+          tearGroup.add(strip);
+        }
+        bodyGroup.add(tearGroup);
+
+        // 3D floating fuel bar above lit lantern
+        const fuelBarGroup = new THREE.Group();
+        fuelBarGroup.position.y = 3.75;
+        const fuelBg = new THREE.Mesh(
+          new THREE.PlaneGeometry(1.5, 0.2),
+          new THREE.MeshBasicMaterial({ color: 0x0e1430, side: THREE.DoubleSide }),
+        );
+        const fuelBarMat = new THREE.MeshBasicMaterial({ color: 0xffb347, side: THREE.DoubleSide });
+        const fuelBarFill = new THREE.Mesh(new THREE.PlaneGeometry(1.42, 0.13), fuelBarMat);
+        fuelBarFill.position.z = 0.01;
+        fuelBarGroup.add(fuelBg, fuelBarFill);
+        group.add(fuelBarGroup);
 
         const light = new THREE.PointLight(0xffb347, 0, 26);
         light.position.y = 2.9;
@@ -582,6 +618,11 @@ export class GameScene {
         this.scene.add(group);
         this.lanternVisuals.set(l.id, {
           group,
+          bodyGroup,
+          tearGroup,
+          fuelBarGroup,
+          fuelBarFill,
+          fuelBarMat,
           orbMat,
           coreMesh,
           light,
@@ -695,7 +736,7 @@ export class GameScene {
     return { x, y, onScreen };
   }
 
-  render(world: WorldState, camYawDeg: number): void {
+  render(world: WorldState, camYawDeg: number, colorblindMode = false): void {
     if (world.night !== this.currentNight) {
       this.clearAllEntityVisuals();
       this.buildTerrainForNight(world.night);
@@ -745,30 +786,84 @@ export class GameScene {
       }
     }
 
+    const blinkOn = Math.sin(timeSec * Math.PI * 2) >= 0; // 1 Hz slow blink
+    const shadeActiveHex = colorblindMode ? 0x00b3ff : 0x7a3cff;
+    const drainingLanternIds = new Set(
+      world.shades.filter((s) => s.state === 'drain' && s.target_lantern_id).map((s) => s.target_lantern_id as string),
+    );
+
     let litCount = 0;
     for (const l of world.lanterns) {
       if (l.lit) litCount++;
       const vis = this.lanternVisuals.get(l.id);
       if (vis) {
+        const fuelVal = l.fuel_ticks / 60;
+        const isDrained = drainingLanternIds.has(l.id);
+        const shakeX = isDrained ? Math.sin(timeSec * 42) * 0.05 : 0;
+        vis.group.position.set(l.pos[0] + shakeX, l.pos[1], l.pos[2]);
+
         const ringMat = vis.safeRing.material as THREE.MeshBasicMaterial;
         if (l.lit) {
+          vis.bodyGroup.scale.set(1, 1, 1);
+          vis.tearGroup.visible = false;
+          vis.fuelBarGroup.visible = true;
+          vis.fuelBarGroup.lookAt(this.camera.position);
+
+          const fuelFrac = Math.max(0.02, Math.min(1, fuelVal / Math.max(1, world.tuning.fuel_max)));
+          vis.fuelBarFill.scale.x = fuelFrac;
+          vis.fuelBarFill.position.x = -0.71 * (1 - fuelFrac);
+
+          const isLow = fuelVal < world.tuning.low_fuel_threshold;
+          if (isLow) {
+            vis.fuelBarMat.color.setHex(colorblindMode ? 0xffffff : 0xff5a5f);
+            vis.orbMat.emissiveIntensity = blinkOn ? 1.9 : 0.35;
+            vis.light.intensity = blinkOn ? 7.5 : 1.5;
+            vis.fuelBarGroup.visible = blinkOn;
+            ringMat.opacity = 0; // Safe zone lost below 30 fuel
+          } else {
+            vis.fuelBarMat.color.setHex(0xffb347);
+            vis.orbMat.emissiveIntensity = 2.0;
+            vis.light.intensity = 10.0;
+            ringMat.opacity = 0.45;
+          }
           vis.orbMat.color.setHex(0xffe9b0);
           vis.orbMat.emissive.setHex(0xffb347);
-          vis.orbMat.emissiveIntensity = 2.0;
-          vis.light.intensity = 10.0;
-          ringMat.opacity = 0.45;
         } else {
+          // Unlit distinction without color: 20% collapsed height + dark paper tears
+          vis.bodyGroup.scale.set(1.08, 0.8, 1.08);
+          vis.tearGroup.visible = true;
+          vis.fuelBarGroup.visible = false;
           vis.orbMat.color.setHex(0x5b5f6e);
           vis.orbMat.emissive.setHex(0xffb347);
           vis.orbMat.emissiveIntensity =
-            0.15 + (l.deposited / Math.max(1, world.tuning.lantern_cost)) * 0.8;
-          vis.light.intensity = 0.5 + l.deposited * 0.8;
+            0.15 + (l.deposited / Math.max(1, l.ever_lit ? world.tuning.relight_cost : world.tuning.lantern_cost)) * 0.7;
+          vis.light.intensity = 0.4 + l.deposited * 0.6;
           ringMat.opacity = 0;
         }
       }
     }
 
+    // Update siphon beams for draining shades
+    while (this.drainBeamsGroup.children.length > 0) {
+      const child = this.drainBeamsGroup.children[0] as THREE.Line;
+      this.drainBeamsGroup.remove(child);
+      child.geometry.dispose();
+      (child.material as THREE.Material).dispose();
+    }
     for (const s of world.shades) {
+      if (s.state === 'drain' && s.target_lantern_id) {
+        const targetL = world.lanterns.find((l) => l.id === s.target_lantern_id);
+        if (targetL) {
+          const pts = [
+            new THREE.Vector3(s.pos[0], s.pos[1] + 0.9, s.pos[2]),
+            new THREE.Vector3(targetL.pos[0], targetL.pos[1] + 2.6, targetL.pos[2]),
+          ];
+          const lineGeo = new THREE.BufferGeometry().setFromPoints(pts);
+          const lineMat = new THREE.LineBasicMaterial({ color: shadeActiveHex });
+          this.drainBeamsGroup.add(new THREE.Line(lineGeo, lineMat));
+        }
+      }
+
       const vis = this.shadeVisuals.get(s.id);
       if (vis) {
         vis.group.position.set(s.pos[0], s.pos[1], s.pos[2]);
@@ -785,17 +880,27 @@ export class GameScene {
         } else {
           vis.group.scale.setScalar(s.state === 'spawning' ? 0.5 : 1.0);
           vis.inkMaterial.color.setHex(0x120a1a);
-          vis.inkMaterial.emissive.setHex(0x7a3cff);
-          vis.inkMaterial.emissiveIntensity = 0.95;
-          const dx = world.player.pos[0] - s.pos[0];
-          const dz = world.player.pos[2] - s.pos[2];
+          vis.inkMaterial.emissive.setHex(shadeActiveHex);
+          vis.inkMaterial.emissiveIntensity = s.state === 'drain' ? 1.4 : 0.95;
+          const lookTarget =
+            s.state === 'drain' && s.target_lantern_id
+              ? world.lanterns.find((l) => l.id === s.target_lantern_id)?.pos ?? world.player.pos
+              : world.player.pos;
+          const dx = lookTarget[0] - s.pos[0];
+          const dz = lookTarget[2] - s.pos[2];
           if (Math.hypot(dx, dz) > 0.05) {
             vis.group.rotation.y = Math.atan2(dx, dz);
           }
-          if (vis.runAction && vis.idleAction && world.state === 'playing' && vis.currentClip !== 'run') {
-            vis.idleAction.stop();
-            vis.runAction.play();
-            vis.currentClip = 'run';
+          const wantClip = s.state === 'drain' ? 'idle' : 'run';
+          if (vis.runAction && vis.idleAction && world.state === 'playing' && vis.currentClip !== wantClip) {
+            if (wantClip === 'idle') {
+              vis.runAction.stop();
+              vis.idleAction.play();
+            } else {
+              vis.idleAction.stop();
+              vis.runAction.play();
+            }
+            vis.currentClip = wantClip;
           }
         }
         if (vis.mixer && world.state === 'playing') {

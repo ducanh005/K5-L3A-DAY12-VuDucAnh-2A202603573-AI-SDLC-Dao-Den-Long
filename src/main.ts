@@ -13,6 +13,7 @@ if (!appEl) {
 
 let settings = loadSettings();
 let currentNight: NightNumber = 1;
+const nightScores: [number, number, number] = [0, 0, 0];
 let totalCampaignScore = 0;
 let campaignMode = true;
 let screenMode: ScreenMode = 'menu';
@@ -43,12 +44,14 @@ const hud = new HudController(appEl, settings, {
   onStartCampaign: () => {
     audio.unlock();
     campaignMode = true;
+    nightScores.fill(0);
     totalCampaignScore = 0;
     startNight(1, true);
   },
   onSelectNight: (night) => {
     audio.unlock();
     campaignMode = false;
+    nightScores.fill(0);
     totalCampaignScore = 0;
     startNight(night, true);
   },
@@ -179,7 +182,8 @@ function loop(now: number): void {
       accumulator -= FIXED_DT;
 
       if (world.state === 'won') {
-        totalCampaignScore += world.score;
+        nightScores[currentNight - 1] = world.score;
+        totalCampaignScore = nightScores[0] + nightScores[1] + nightScores[2];
         screenMode = currentNight === 3 ? 'dawn' : 'result';
         break;
       } else if (world.state === 'lost') {
@@ -191,7 +195,7 @@ function loop(now: number): void {
     accumulator = 0;
   }
 
-  gameScene.render(world, camYawDeg);
+  gameScene.render(world, camYawDeg, settings.colorblindMode);
   hud.update(screenMode, world, gameScene, totalCampaignScore, settings, audio.isMuted());
   requestAnimationFrame(loop);
 }
