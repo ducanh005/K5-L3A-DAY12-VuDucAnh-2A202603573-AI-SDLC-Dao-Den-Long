@@ -1,0 +1,6 @@
+#!/bin/sh
+echo "[pre-commit] Running typecheck and unit tests..."
+npm test || {
+  echo "[pre-commit] Blocked: unit tests failed."
+  exit 1
+}

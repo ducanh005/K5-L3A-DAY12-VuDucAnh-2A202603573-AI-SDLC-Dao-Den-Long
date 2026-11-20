@@ -1,0 +1,19 @@
+{
+  "name": "cp0-smoke",
+  "seed": 2026,
+  "dt": 0.0166666667,
+  "steps": [
+    {
+      "ticks": 60,
+      "input": { "moveX": 0.8, "moveZ": 0.4, "sprint": true, "interact": false }
+    },
+    {
+      "ticks": 90,
+      "input": { "moveX": -0.3, "moveZ": 0.9, "sprint": false, "interact": true }
+    },
+    {
+      "ticks": 60,
+      "input": { "moveX": 0, "moveZ": -1, "sprint": false, "interact": true }
+    }
+  ]
+}
