@@ -1,4 +1,4 @@
-import type { WorldEvent } from '../core/types.js';
+import type { ContractEvent } from '../core/types.js';
 
 /**
  * Procedural WebAudio synthesizer for game feedback (zero external copyrighted audio files).
@@ -26,7 +26,7 @@ export class ProceduralAudio {
     return this.muted;
   }
 
-  playEvents(events: WorldEvent[]): void {
+  playEvents(events: ContractEvent[]): void {
     if (this.muted || !this.ctx || events.length === 0) {
       return;
     }
@@ -34,14 +34,23 @@ export class ProceduralAudio {
       void this.ctx.resume();
     }
     for (const ev of events) {
-      if (ev.type === 'firefly_collected') {
-        this.playTone(660, 0.14, 'sine', 0.08, 880);
-      } else if (ev.type === 'lantern_lit') {
-        this.playTone(392, 0.35, 'triangle', 0.12, 587.33);
-      } else if (ev.type === 'shadow_hit') {
-        this.playTone(130, 0.25, 'sawtooth', 0.09, 85);
-      } else if (ev.type === 'game_won') {
-        this.playTone(523.25, 0.45, 'sine', 0.12, 783.99);
+      if (ev.name === 'mote_picked') {
+        this.playTone(680, 0.14, 'sine', 0.08, 920);
+      } else if (ev.name === 'deposit') {
+        this.playTone(440, 0.18, 'triangle', 0.09, 554.37);
+      } else if (ev.name === 'lantern_lit') {
+        this.playTone(392, 0.4, 'triangle', 0.12, 587.33);
+        this.playTone(587.33, 0.45, 'sine', 0.1, 783.99);
+      } else if (ev.name === 'pulse') {
+        this.playTone(520, 0.28, 'sine', 0.11, 220);
+      } else if (ev.name === 'player_hit') {
+        this.playTone(130, 0.28, 'sawtooth', 0.1, 75);
+      } else if (ev.name === 'game_over') {
+        if (ev.data.result === 'won') {
+          this.playTone(523.25, 0.5, 'sine', 0.12, 1046.5);
+        } else {
+          this.playTone(180, 0.5, 'triangle', 0.11, 90);
+        }
       }
     }
   }

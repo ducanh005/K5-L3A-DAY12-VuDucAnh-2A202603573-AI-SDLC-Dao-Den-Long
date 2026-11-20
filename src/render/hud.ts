@@ -1,7 +1,7 @@
 import type { WorldState } from '../core/types.js';
 
 /**
- * Lightweight DOM HUD overlay showing Mây's status, story cues, and controls.
+ * Lightweight DOM HUD overlay displaying Night 1 progress, score, flames, motes, and story cues.
  */
 export class HudController {
   private readonly root: HTMLDivElement;
@@ -19,24 +19,25 @@ export class HudController {
 
     this.statsEl = document.createElement('div');
     this.statsEl.style.cssText =
-      'background:rgba(10,14,24,0.78);border:1px solid rgba(255,210,125,0.3);border-radius:10px;padding:12px 16px;font-size:14px;line-height:1.5;backdrop-filter:blur(6px);';
+      'background:rgba(14,10,24,0.82);border:1px solid rgba(255,190,100,0.38);border-radius:12px;padding:12px 16px;font-size:14px;line-height:1.55;backdrop-filter:blur(6px);';
 
     this.loreEl = document.createElement('div');
     this.loreEl.style.cssText =
-      'background:rgba(10,14,24,0.72);border:1px solid rgba(180,200,255,0.2);border-radius:10px;padding:10px 14px;font-size:13px;max-width:340px;color:#d6e0f5;';
+      'background:rgba(14,10,24,0.75);border:1px solid rgba(190,150,255,0.25);border-radius:12px;padding:10px 14px;font-size:13px;max-width:340px;color:#e8def8;';
     this.loreEl.textContent =
-      'Mây: "Sương đen đang nuốt chửng Đảo Đèn Lồng. Hãy gom đom đóm để thắp sáng các Đèn Lồng Lớn!"';
+      'Mây: "Sương tím đen đang phủ kín Đảo Bến. Hãy gom đom đóm thắp lại 5 Đèn Lồng Lớn!"';
 
     topBar.append(this.statsEl, this.loreEl);
 
     this.statusEl = document.createElement('div');
     this.statusEl.style.cssText =
-      'align-self:center;background:rgba(10,14,24,0.88);border:1px solid rgba(255,210,125,0.5);border-radius:12px;padding:14px 22px;font-size:16px;display:none;text-align:center;';
+      'align-self:center;background:rgba(14,10,24,0.92);border:1px solid rgba(255,190,100,0.65);border-radius:14px;padding:18px 26px;font-size:16px;display:none;text-align:center;';
 
     const footer = document.createElement('div');
     footer.style.cssText =
-      'align-self:flex-start;background:rgba(10,14,24,0.7);border-radius:8px;padding:8px 12px;font-size:12px;color:#b8c4db;';
-    footer.textContent = 'Di chuyển: WASD / Phím mũi tên | Chạy nhanh: Shift | Thắp đèn: E / Space | Chơi lại: R | Âm thanh: M';
+      'align-self:flex-start;background:rgba(14,10,24,0.75);border-radius:8px;padding:8px 12px;font-size:12px;color:#d0c4e2;';
+    footer.textContent =
+      'Di chuyển: WASD / Mũi tên | Nhảy: Space | Xoay Camera: Q/C hoặc Kéo chuột | Nạp đèn: E / F | Tỏa sáng xua Bóng Mực: Shift / X | Chơi lại: R | Âm: M';
 
     this.root.append(topBar, this.statusEl, footer);
     container.appendChild(this.root);
@@ -45,19 +46,36 @@ export class HudController {
   update(state: WorldState, muted: boolean): void {
     const litCount = state.lanterns.filter((l) => l.lit).length;
     const totalLanterns = state.lanterns.length;
+    const mins = Math.floor(state.time_left_s / 60);
+    const secs = Math.floor(state.time_left_s % 60)
+      .toString()
+      .padStart(2, '0');
+    const pulseReady =
+      state.player.carried >= state.tuning.pulse_cost && state.player.pulse_cd_left_s <= 0;
 
     this.statsEl.innerHTML = [
-      `<div><strong>Đảo Đèn Lồng</strong> · Seed ${state.seed}</div>`,
-      `<div>Đom đóm: <strong>${state.player.fireflies}</strong> · Đèn Lồng Lớn: <strong>${litCount}/${totalLanterns}</strong></div>`,
-      `<div>Sinh lực: <strong>${state.player.hp}</strong> · Thể lực: <strong>${Math.round(state.player.stamina)}%</strong> · Âm: ${muted ? 'Tắt' : 'Bật'}</div>`,
+      `<div><strong>Đêm 1 – Đảo Bến</strong> · Điểm: <strong style="color:#ffd27d">${state.score}</strong> · Còn lại: <strong>${mins}:${secs}</strong></div>`,
+      `<div>Đom đóm: <strong style="color:#ffd27d">${state.player.carried}/${state.tuning.carry_capacity}</strong> · Đèn Lồng Lớn: <strong style="color:#ffd27d">${litCount}/${totalLanterns}</strong></div>`,
+      `<div>Ngọn lửa (Máu): <strong style="color:#ff9e64">${state.player.flames}/${state.tuning.flames}</strong> · Tỏa sáng: ${pulseReady ? '<span style="color:#8ce99a">Sẵn sàng</span>' : '<span style="color:#aaa">Cần 1 đom đóm / hồi</span>'} · Âm: ${muted ? 'Tắt' : 'Bật'}</div>`,
     ].join('');
 
-    if (state.status === 'won') {
+    if (litCount === 0) {
+      this.loreEl.textContent =
+        'Mây: "Nhặt đốm sáng vàng cam và mang về 5 Đèn Lồng Lớn. Bóng Mực rất sợ ánh sáng đèn!"';
+    } else if (litCount < totalLanterns) {
+      this.loreEl.textContent = `Mây: "Đã thắp ${litCount}/${totalLanterns} Đèn Lồng Lớn! Vùng quanh đèn đã sáng an toàn trước Bóng Mực."`;
+    } else {
+      this.loreEl.textContent = 'Mây: "Cả Đảo Bến đã rực sáng trở lại!"';
+    }
+
+    if (state.state === 'won') {
       this.statusEl.style.display = 'block';
-      this.statusEl.innerHTML = '<strong>Chiến thắng!</strong> Ánh sáng đã trở lại trên Đảo Đèn Lồng. Nhấn <code>R</code> để chơi lại.';
-    } else if (state.status === 'lost') {
+      this.statusEl.innerHTML = `<strong>Chiến thắng Đêm 1 – Đảo Bến!</strong><br/>Tổng điểm: <strong>${state.score}</strong> · Nhấn <code>R</code> để chơi lại.`;
+    } else if (state.state === 'lost') {
       this.statusEl.style.display = 'block';
-      this.statusEl.innerHTML = '<strong>Bóng Mực đã nuốt lấy ngọn đèn!</strong> Nhấn <code>R</code> để thử lại.';
+      const reasonText =
+        state.player.flames <= 0 ? 'Ngọn lửa của Mây đã tắt!' : 'Bình minh đã tới trước khi đảo sáng!';
+      this.statusEl.innerHTML = `<strong>Thất bại — ${reasonText}</strong><br/>Điểm: <strong>${state.score}</strong> · Nhấn <code>R</code> để chơi lại.`;
     } else {
       this.statusEl.style.display = 'none';
     }
