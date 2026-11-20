@@ -21,7 +21,7 @@ npm run dev
 - **Di chuyển:** `WASD` hoặc phím mũi tên
 - **Nhảy:** `Space`
 - **Xoay Camera 3D:** Kéo chuột trái hoặc nhấn `Q` / `C`
-- **Nạp ánh sáng vào Đèn Lồng Lớn:** `E` hoặc `F` (khi đứng trong bán kính `2.5m` quanh đèn)
+- **Nạp ánh sáng vào Đèn Lồng Lớn:** `E` hoặc `F` (khi đứng trong bán kính `3.0m` quanh đèn)
 - **Tỏa sáng (Pulse) xua Bóng Mực:** `Shift`, `X`, hoặc Click chuột phải (tốn `1` đom đóm, hồi `1s`)
 - **Chơi lại sau khi thắng / thua:** `R`
 - **Bật / Tắt âm thanh:** `M`
@@ -30,7 +30,7 @@ npm run dev
 
 Mọi thông số chuẩn được khai báo đồng bộ trong [`game.contract.json`](game.contract.json):
 - **Mạng (Flames):** Bắt đầu với `3` ngọn lửa; chạm Bóng Mực mất `1` ngọn lửa, rơi `50%` số đom đóm đang giữ (làm tròn xuống), bất tử `1.5s`.
-- **Đom đóm & Đèn Lồng Lớn:** Giữ tối đa `5` đom đóm (`carry_capacity = 5`), cần `3` đom đóm để thắp sáng `1` Đèn Lồng Lớn (`lantern_cost = 3`). Đèn đã sáng tạo vùng an toàn bán kính `5m` (`safe_radius = 5`) mà Bóng Mực không thể đi vào.
+- **Đom đóm & Đèn Lồng Lớn:** Nhặt trong bán kính `2.4m`, giữ tối đa `8` đom đóm (`carry_capacity = 8`), cần `3` đom đóm để thắp sáng `1` Đèn Lồng Lớn (`lantern_cost = 3`). Đèn đã sáng tạo vùng an toàn bán kính `5m` (`safe_radius = 5`) mà Bóng Mực không thể đi vào. Ranh giới chơi trên đảo được khóa gọn ở bán kính `39m` với hàng rào đá trực quan quanh đảo `40m`.
 - **Tỏa sáng (Pulse):** Tiêu hao `1` đom đóm, đẩy lùi `4m` và làm choáng (`stunned`) mọi Bóng Mực trong bán kính `6m` suốt `3s`.
 - **Bảng điểm (`score`):**
   - Nhặt 1 đom đóm (`per_mote`): `+10`
@@ -56,7 +56,7 @@ Mọi thông số chuẩn được khai báo đồng bộ trong [`game.contract.
 ## Sáng tạo của tôi
 
 - **Hoàn toàn tách biệt ở tầng hiển thị 3D (`src/render/`), không thay đổi bất kỳ giá trị nào của đầu ra headless:**
-  - **Không khí cổ tích & chuyển sáng động (`src/render/scene.ts`, `src/render/effects.ts`):** Mây đội nón lá có treo đèn lồng nhỏ phát sáng vàng cam ấm; màu trời/sương tím đen chuyển ấm dần theo tỉ lệ số Đèn Lồng Lớn đã thắp (`0/5` → `5/5`), kèm vòng sáng vùng an toàn `5m` và sóng ánh sáng lan tỏa khi dùng Pulse.
+  - **Mô hình 3D & Texture CC0/MIT (`public/assets/`, `src/render/scene.ts`, `effects.ts`):** Mây dùng mô hình có xương chuyển động (`RobotExpressive.glb`) đội nón lá treo đèn lồng nhỏ; 5 Đèn Lồng Lớn dùng `Lantern.glb`; Bóng Mực dùng `Fox.glb` phủ mực tím đen chuyển động săn đuổi; mặt đảo phủ texture cỏ đêm, hàng rào cột đá ven đảo `39.3m`, và vòng chiếu sáng mặt đất dưới từng đom đóm (`spark1.png`).
   - **Âm thanh WebAudio tổng hợp trực tiếp (`src/render/audio.ts`):** Phát âm thanh chuông ấm khi nhặt đom đóm, hợp âm ngân vang khi thắp đèn, sóng âm khi tỏa sáng và cảnh báo trầm khi chạm Bóng Mực (không dùng file nhạc ngoài, 0 rủi ro bản quyền).
-  - **HUD dẫn chuyện (`src/render/hud.ts`):** Hiển thị tiến độ Đêm 1, trạng thái Tỏa sáng, và lời dẫn ngắn theo tiến độ thắp đèn.
+  - **HUD dẫn chuyện & gợi ý ngữ cảnh (`src/render/hud.ts`):** Hiển thị tiến độ Đêm 1, trạng thái Tỏa sáng, nhắc nhở khi túi đầy `8/8` hoặc khi đứng trong tầm nạp đèn.
 - **Bằng chứng phần lõi không bị ảnh hưởng:** Toàn bộ bài kiểm tra trong `npm run verify` chạy trực tiếp `node dist-headless/cli.js` (chỉ nạp `src/core/` và `src/headless/`, không chạm `src/render/`). Xem chi tiết tại `docs/proof/phase-1-verification.md`.
