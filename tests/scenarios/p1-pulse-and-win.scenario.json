@@ -1,17 +1,17 @@
 {
-  "player": { "pos": [0, 0, 0], "carried": 4, "flames": 3 },
+  "player": { "pos": [0, 0, 0], "carried": 10, "flames": 3 },
   "random_motes": false,
   "random_shades": false,
   "motes": [],
   "shades": [
-    { "id": "S1", "pos": [0, 0, 4] }
+    { "id": "S1", "pos": [0, 0, 4], "state": "chase" }
   ],
   "lanterns": [
     { "id": "L1", "lit": true },
     { "id": "L2", "lit": true },
     { "id": "L3", "lit": true },
     { "id": "L4", "lit": true },
-    { "id": "L5", "pos": [0, 0, 10], "deposited": 0, "lit": false }
+    { "id": "L5", "pos": [0, 0, 10], "deposited": 3, "lit": false }
   ],
   "time_left_s": 300
 }

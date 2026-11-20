@@ -15,6 +15,16 @@ function parseWriteProofArg(argv) {
   return null;
 }
 
+function getScenarioConfig(base) {
+  if (base.includes('night2') || base.includes('dash-and-charm') || base.includes('drifter')) {
+    return { night: 2, ticks: 360 };
+  }
+  if (base.includes('night3')) {
+    return { night: 3, ticks: 1900 };
+  }
+  return { night: 1, ticks: 300 };
+}
+
 function validateJsonl(jsonlText, label) {
   const lines = jsonlText
     .trim()
@@ -27,11 +37,35 @@ function validateJsonl(jsonlText, label) {
   if (lines[0].type !== 'snapshot' || lines[0].tick !== 0) {
     throw new Error(`${label}: first line must be snapshot at tick 0`);
   }
+  const snap0 = lines[0];
+  if (
+    snap0.night === undefined ||
+    snap0.wind === undefined ||
+    typeof snap0.wind.active !== 'boolean' ||
+    typeof snap0.wind.dir_deg !== 'number' ||
+    !snap0.player ||
+    !Array.isArray(snap0.player.vel) ||
+    typeof snap0.player.grounded !== 'boolean' ||
+    typeof snap0.player.invuln !== 'boolean' ||
+    typeof snap0.player.dash_cd_s !== 'number' ||
+    typeof snap0.player.pulse_cd_s !== 'number' ||
+    typeof snap0.player.charm_s !== 'number' ||
+    !Array.isArray(snap0.motes) ||
+    !Array.isArray(snap0.drifters) ||
+    !Array.isArray(snap0.charms)
+  ) {
+    throw new Error(`${label}: snapshot missing Contract v1.1 required fields`);
+  }
   const last = lines[lines.length - 1];
-  if (last.type !== 'end' || !['playing', 'won', 'lost'].includes(last.state)) {
+  if (last.type !== 'end' || !['playing', 'paused', 'won', 'lost'].includes(last.state)) {
     throw new Error(`${label}: last line must be valid end record`);
   }
-  return { lineCount: lines.length, end: last, events: lines.filter((l) => l.type === 'event') };
+  return {
+    lineCount: lines.length,
+    end: last,
+    events: lines.filter((l) => l.type === 'event'),
+    snapshots: lines.filter((l) => l.type === 'snapshot'),
+  };
 }
 
 function main() {
@@ -44,14 +78,18 @@ function main() {
 
   console.log('2. Building headless CLI bundle (npm run build:headless)...');
   runCmd('npm run build:headless');
-  sections.push({ title: 'Headless Bundle Build', command: 'npm run build:headless', output: 'Built dist-headless/cli.js' });
+  sections.push({
+    title: 'Headless Bundle Build',
+    command: 'npm run build:headless',
+    output: 'Built dist-headless/cli.js',
+  });
 
-  console.log('3. Running Vitest unit tests (npm test)...');
+  console.log('3. Running Vitest unit & performance tests (npm test)...');
   const testOut = runCmd('npm test');
   console.log(testOut);
-  sections.push({ title: 'Unit Tests', command: 'npm test', output: testOut });
+  sections.push({ title: 'Unit & Contract Tests', command: 'npm test', output: testOut });
 
-  console.log('4. Checking Test Contract v1.0 headless determinism & JSONL schema...');
+  console.log('4. Checking Test Contract v1.1 headless determinism & JSONL schema across all scenarios...');
   const contract = JSON.parse(readFileSync(resolve(process.cwd(), 'game.contract.json'), 'utf8'));
   const scenariosDir = resolve(process.cwd(), 'tests/scenarios');
   const scenarioFiles = readdirSync(scenariosDir)
@@ -66,13 +104,14 @@ function main() {
   try {
     for (const scFile of scenarioFiles) {
       const base = scFile.replace(/\.scenario\.json$/, '');
+      const { night, ticks } = getScenarioConfig(base);
       const scPath = `tests/scenarios/${scFile}`;
       const inPath = `tests/scenarios/${base}.inputs.json`;
       const out1 = join(tmpDir, `${base}-run1.jsonl`);
       const out2 = join(tmpDir, `${base}-run2.jsonl`);
 
-      const cmd1 = `${contract.headless_cmd} --seed 2026 --night 1 --scenario "${scPath}" --inputs "${inPath}" --ticks 300 --out "${out1}" --snapshot-every 10`;
-      const cmd2 = `${contract.headless_cmd} --seed 2026 --night 1 --scenario "${scPath}" --inputs "${inPath}" --ticks 300 --out "${out2}" --snapshot-every 10`;
+      const cmd1 = `${contract.headless_cmd} --seed 2026 --night ${night} --scenario "${scPath}" --inputs "${inPath}" --ticks ${ticks} --out "${out1}" --snapshot-every 10`;
+      const cmd2 = `${contract.headless_cmd} --seed 2026 --night ${night} --scenario "${scPath}" --inputs "${inPath}" --ticks ${ticks} --out "${out2}" --snapshot-every 10`;
 
       runCmd(cmd1);
       runCmd(cmd2);
@@ -85,14 +124,36 @@ function main() {
 
       const summary = validateJsonl(content1, base);
       console.log(
-        `   [OK] ${base} -> deterministic (${summary.lineCount} JSONL lines, end=${JSON.stringify(summary.end)})`,
+        `   [OK] ${base} (Night ${night}) -> deterministic (${summary.lineCount} JSONL lines, end=${JSON.stringify(summary.end)})`,
       );
       sections.push({
         title: `Headless Contract Verification (${base})`,
-        command: `${contract.headless_cmd} --seed 2026 --night 1 --scenario ${scPath} --inputs ${inPath} --ticks 300 --out <tmp> --snapshot-every 10 (x2)`,
+        command: `${contract.headless_cmd} --seed 2026 --night ${night} --scenario ${scPath} --inputs ${inPath} --ticks ${ticks} --out <tmp> --snapshot-every 10 (x2)`,
         output: `Deterministic match: YES (${summary.lineCount} lines)\nEvents: ${summary.events.map((e) => `${e.tick}:${e.name}`).join(', ')}\nEnd: ${JSON.stringify(summary.end)}`,
       });
     }
+
+    // Benchmark full 21,600-tick Night 3 run (must complete all 21,600 ticks in <= 30s)
+    const benchScenario = join(tmpDir, 'bench-21600-scenario.json');
+    writeFileSync(benchScenario, JSON.stringify({ player: { flames: 100 } }), 'utf8');
+    const benchOut = join(tmpDir, 'bench-21600.jsonl');
+    const t0 = performance.now();
+    runCmd(`${contract.headless_cmd} --seed 2026 --night 3 --scenario "${benchScenario}" --ticks 21600 --out "${benchOut}" --snapshot-every 600`);
+    const benchMs = Math.round(performance.now() - t0);
+    const benchLines = readFileSync(benchOut, 'utf8').trim().split('\n').filter(Boolean);
+    const benchEnd = JSON.parse(benchLines[benchLines.length - 1]);
+    if (benchEnd.type !== 'end' || benchEnd.ticks !== 21600) {
+      throw new Error(`21,600-tick benchmark stopped early at tick ${benchEnd.ticks}`);
+    }
+    if (benchMs > 30000) {
+      throw new Error(`21,600-tick headless run exceeded 30s budget: ${benchMs}ms`);
+    }
+    console.log(`   [OK] 21,600-tick Night 3 benchmark (${benchEnd.ticks} ticks) -> ${benchMs}ms (limit <= 30000ms)`);
+    sections.push({
+      title: 'Full Night Headless Performance Benchmark (21,600 ticks)',
+      command: `${contract.headless_cmd} --seed 2026 --night 3 --scenario <flames=100> --ticks 21600 --out <tmp> --snapshot-every 600`,
+      output: `Completed ticks: ${benchEnd.ticks}\nElapsed: ${benchMs} ms (Budget <= 30000 ms)`,
+    });
 
     // Verify invalid input triggers exit code 2
     const badFile = join(tmpDir, 'bad-inputs.json');
