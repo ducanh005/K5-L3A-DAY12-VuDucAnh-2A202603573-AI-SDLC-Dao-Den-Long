@@ -14,6 +14,7 @@ import type {
 
 export const FIXED_DT = 1 / 60;
 export const ISLAND_RADIUS = 40;
+export const PLAYABLE_RADIUS = 39;
 const LANTERN_RING_RADIUS = 25;
 const DEFAULT_RANDOM_MOTE_COUNT = 25;
 const DEFAULT_RANDOM_SHADE_COUNT = 3;
@@ -22,11 +23,11 @@ const GRAVITY = 18;
 
 export const DEFAULT_TUNING: TuningConfig = {
   player_speed: 6,
-  carry_capacity: 5,
+  carry_capacity: 8,
   lantern_cost: 3,
   lantern_count_night1: 5,
-  pickup_radius: 1.5,
-  interact_radius: 2.5,
+  pickup_radius: 2.4,
+  interact_radius: 3.0,
   pulse_cost: 1,
   pulse_radius: 6,
   night1_duration_s: 300,
@@ -217,17 +218,23 @@ export function createWorld(options: CreateWorldOptions = {}): WorldState {
 
   const initialTimeLeft = scenario?.time_left_s ?? tuning.night1_duration_s;
 
-  let maxEntityDist = ISLAND_RADIUS;
-  for (const l of lanterns) {
-    maxEntityDist = Math.max(maxEntityDist, Math.hypot(l.pos[0], l.pos[2]) + 10);
+  let maxEntityDist = PLAYABLE_RADIUS;
+  if (scenario) {
+    for (const l of lanterns) {
+      const d = Math.hypot(l.pos[0], l.pos[2]);
+      if (d > PLAYABLE_RADIUS - 1) maxEntityDist = Math.max(maxEntityDist, d + 5);
+    }
+    for (const m of motes) {
+      const d = Math.hypot(m.pos[0], m.pos[2]);
+      if (d > PLAYABLE_RADIUS - 1) maxEntityDist = Math.max(maxEntityDist, d + 5);
+    }
+    for (const s of shades) {
+      const d = Math.hypot(s.pos[0], s.pos[2]);
+      if (d > PLAYABLE_RADIUS - 1) maxEntityDist = Math.max(maxEntityDist, d + 5);
+    }
+    const pd = Math.hypot(playerPos[0], playerPos[2]);
+    if (pd > PLAYABLE_RADIUS - 1) maxEntityDist = Math.max(maxEntityDist, pd + 5);
   }
-  for (const m of motes) {
-    maxEntityDist = Math.max(maxEntityDist, Math.hypot(m.pos[0], m.pos[2]) + 10);
-  }
-  for (const s of shades) {
-    maxEntityDist = Math.max(maxEntityDist, Math.hypot(s.pos[0], s.pos[2]) + 10);
-  }
-  maxEntityDist = Math.max(maxEntityDist, Math.hypot(playerPos[0], playerPos[2]) + 10);
 
   return {
     seed,

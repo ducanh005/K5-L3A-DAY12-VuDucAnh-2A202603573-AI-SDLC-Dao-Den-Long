@@ -82,6 +82,16 @@ describe('Phase 1 — PRD-0 & Test Contract v1.0', () => {
     expect(world.player.pos[1]).toBe(0);
   });
 
+  it('clamps player movement strictly inside PLAYABLE_RADIUS (39m) during normal play', () => {
+    let world = createWorld({ seed: 99, night: 1 });
+    expect(world.map_radius).toBe(39);
+    for (let i = 0; i < 600; i++) {
+      world = stepWorld(world, baseInput({ move: [0, 1] }), FIXED_DT);
+    }
+    const dist = Math.hypot(world.player.pos[0], world.player.pos[2]);
+    expect(dist).toBeLessThanOrEqual(39.0001);
+  });
+
   it('picks motes up to carry_capacity and deposits/lights Great Lanterns', () => {
     let world = createWorld({
       seed: 2,
@@ -95,26 +105,29 @@ describe('Phase 1 — PRD-0 & Test Contract v1.0', () => {
           [0, 0, 0.8],
           [0, 0, 0.9],
           [0, 0, 1.0],
+          [0, 0, 1.1],
+          [0, 0, 1.2],
+          [0, 0, 1.3],
         ],
         lanterns: [{ id: 'L1', pos: [0, 0, 2.0], deposited: 0 }],
       },
     });
 
-    // Step 1 picks up first 5 motes (carry_capacity = 5), leaving 1 active
+    // Step 1 picks up first 8 motes (carry_capacity = 8), leaving 1 active
     world = stepWorld(world, baseInput({ interact: false }), FIXED_DT);
-    expect(world.player.carried).toBe(5);
+    expect(world.player.carried).toBe(8);
     expect(world.motes.filter((m) => m.active).length).toBe(1);
-    expect(world.score).toBe(5 * DEFAULT_TUNING.score.per_mote);
-    expect(world.last_events.filter((e) => e.name === 'mote_picked').length).toBe(5);
+    expect(world.score).toBe(8 * DEFAULT_TUNING.score.per_mote);
+    expect(world.last_events.filter((e) => e.name === 'mote_picked').length).toBe(8);
 
     // Step 2 interacts with L1 (cost = 3) -> deposits 3, lights L1, score += 100
     world = stepWorld(world, baseInput({ interact: true }), FIXED_DT);
-    expect(world.player.carried).toBe(2);
+    expect(world.player.carried).toBe(5);
     expect(world.lanterns[0].lit).toBe(true);
     expect(world.lanterns[0].deposited).toBe(3);
     expect(world.last_events.map((e) => e.name)).toContain('deposit');
     expect(world.last_events.map((e) => e.name)).toContain('lantern_lit');
-    expect(world.score).toBe(5 * 10 + 100);
+    expect(world.score).toBe(8 * 10 + 100);
   });
 
   it('stuns and pushes shades with pulse and enforces cooldown + safe_radius', () => {

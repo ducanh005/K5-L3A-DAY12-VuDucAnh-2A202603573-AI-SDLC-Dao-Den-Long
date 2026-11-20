@@ -1,13 +1,14 @@
 import type { WorldState } from '../core/types.js';
 
 /**
- * Lightweight DOM HUD overlay displaying Night 1 progress, score, flames, motes, and story cues.
+ * Lightweight DOM HUD overlay displaying Night 1 progress, score, flames, motes, and context prompts.
  */
 export class HudController {
   private readonly root: HTMLDivElement;
   private readonly statsEl: HTMLDivElement;
   private readonly loreEl: HTMLDivElement;
   private readonly statusEl: HTMLDivElement;
+  private readonly promptEl: HTMLDivElement;
 
   constructor(container: HTMLElement) {
     this.root = document.createElement('div');
@@ -33,13 +34,21 @@ export class HudController {
     this.statusEl.style.cssText =
       'align-self:center;background:rgba(14,10,24,0.92);border:1px solid rgba(255,190,100,0.65);border-radius:14px;padding:18px 26px;font-size:16px;display:none;text-align:center;';
 
+    const bottomSection = document.createElement('div');
+    bottomSection.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:8px;';
+
+    this.promptEl = document.createElement('div');
+    this.promptEl.style.cssText =
+      'background:rgba(28,16,44,0.9);border:1px solid rgba(255,210,125,0.65);border-radius:10px;padding:8px 16px;font-size:14px;color:#ffe299;display:none;text-align:center;';
+
     const footer = document.createElement('div');
     footer.style.cssText =
       'align-self:flex-start;background:rgba(14,10,24,0.75);border-radius:8px;padding:8px 12px;font-size:12px;color:#d0c4e2;';
     footer.textContent =
       'Di chuyển: WASD / Mũi tên | Nhảy: Space | Xoay Camera: Q/C hoặc Kéo chuột | Nạp đèn: E / F | Tỏa sáng xua Bóng Mực: Shift / X | Chơi lại: R | Âm: M';
 
-    this.root.append(topBar, this.statusEl, footer);
+    bottomSection.append(this.promptEl, footer);
+    this.root.append(topBar, this.statusEl, bottomSection);
     container.appendChild(this.root);
   }
 
@@ -66,6 +75,30 @@ export class HudController {
       this.loreEl.textContent = `Mây: "Đã thắp ${litCount}/${totalLanterns} Đèn Lồng Lớn! Vùng quanh đèn đã sáng an toàn trước Bóng Mực."`;
     } else {
       this.loreEl.textContent = 'Mây: "Cả Đảo Bến đã rực sáng trở lại!"';
+    }
+
+    // Contextual action prompt to prevent confusion when carry bag is full or near a lantern
+    const nearbyUnlit = state.lanterns.find(
+      (l) =>
+        !l.lit &&
+        Math.hypot(state.player.pos[0] - l.pos[0], state.player.pos[2] - l.pos[2]) <=
+          state.tuning.interact_radius,
+    );
+
+    if (state.state !== 'playing') {
+      this.promptEl.style.display = 'none';
+    } else if (nearbyUnlit) {
+      this.promptEl.style.display = 'block';
+      if (state.player.carried > 0) {
+        this.promptEl.textContent = `Đèn Lồng ${nearbyUnlit.id} (${nearbyUnlit.deposited}/${state.tuning.lantern_cost}) — Nhấn [E] hoặc [F] để nạp đom đóm!`;
+      } else {
+        this.promptEl.textContent = `Đèn Lồng ${nearbyUnlit.id} (${nearbyUnlit.deposited}/${state.tuning.lantern_cost}) — Cần gom thêm đom đóm để thắp sáng!`;
+      }
+    } else if (state.player.carried >= state.tuning.carry_capacity) {
+      this.promptEl.style.display = 'block';
+      this.promptEl.textContent = `Túi đom đóm đã đầy (${state.player.carried}/${state.tuning.carry_capacity})! Hãy mang về Đèn Lồng Lớn để nạp ánh sáng.`;
+    } else {
+      this.promptEl.style.display = 'none';
     }
 
     if (state.state === 'won') {
