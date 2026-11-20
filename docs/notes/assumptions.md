@@ -68,8 +68,25 @@
 | P2-R6 | Chuỗi 3 Đêm, HUD 10 ô, Cài đặt bền vững, Bảng màu & Âm thanh | Menu → Ông Đăng → Đêm 1–3 → Bình Minh; `localStorage` lưu settings; ánh sáng `0.15 + 0.55*ratio`; mũi tên đèn ngoài màn hình | `src/render/`, kiểm thử Chrome tại `localhost:5173` |
 | P2-R7 | Hiệu năng Headless (`<= 30s`) & 3D (`>= 30 FPS`) | Chạy `21.600` tick Đêm 3 `< 30.000 ms`; chơi 1280×720 đạt `>= 30 FPS` | `docs/proof/phase-2-verification.md`, đo FPS trình duyệt |
 
-## Phase 3 (Ticket-03)
-*(Chưa phát hành)*
+## Phase 3 (Ticket-03 · Change Request "Đèn cạn dầu" & Test Contract v1.2)
+
+### Giải trình thay thế test cũ & Quyết định Thiết kế (`ADR-001`)
+Xem chi tiết thiết kế tại [`docs/notes/adr-001-phase3-lantern-fuel-and-dawn.md`](adr-001-phase3-lantern-fuel-and-dawn.md).
+1. **Cập nhật test/scenario cũ bị luật `[THAY THẾ]` làm sai:**
+   - Đã **cập nhật** `tests/scenarios/p1-pulse-and-win.scenario.json` (`time_left_s: 2.0`, các đèn đặt `fuel: 90`) vì Ticket-03 bỏ luật thắng sớm `all_lit` và thay bằng `dawn_survived` khi hết giờ.
+   - Đã **thay thế** các test đơn vị Phase 1–2 cũ về `score` (`+10/mote`, `per_second_left: 2`, `all_lit`) trong `tests/core.test.ts` bằng bộ test mới khớp công thức điểm & luật thắng `Contract v1.2` (`+5/mote`, `+40 relight`, `+15 pulse drain`, `dawn_survived`, `no_flames` kiểm tra trước `dawn`).
+   - Toàn bộ test Phase 2 không bị thay thế (`dash`, `charm`, `drifter`, `jumppad`, `fall`, `Night 3 tiers/wind/pause`, và benchmark Đêm 3 `18,000` ticks) vẫn chạy đầy đủ và giữ nguyên đạt 100%.
+2. **Giả định biên Phase 3:**
+   - **Đèn `scenario.lanterns` đặt `lit: true` không truyền `fuel`:** Mặc định `fuel: 100` (`6000` fuel_ticks) và `ever_lit: true`; không cộng vào `player.successful_lights`.
+   - **Thứ tự xét mục tiêu `wander`:** Khi Mây ở ngoài `12m`, Bóng Mực `wander` ưu tiên đèn sáng `fuel < 30` gần nhất; nếu không có đèn yếu thì đi tuần về phía đèn tắt gần nhất (tie-break theo ID tăng dần `L1 < L2`).
+
+| ID | Yêu cầu Ticket-03 / Contract v1.2 | Tiêu chí nghiệm thu kiểm chứng được | Bằng chứng |
+|---|---|---|---|
+| P3-R1 | Nhiên liệu đèn `100`, hao `1/s`, châm dầu, `lantern_out`, thắp lại `5` | `fuel_ticks` nguyên `1/60`, `refuel`, tắt ở `0` phát `lantern_out`, thắp lại tốn `5` (+40đ, `relight: true`) | `tests/core.test.ts`, `p3-fuel-refuel-relight` |
+| P3-R2 | Đèn `< 30` mất `safe_radius`, Bóng Mực hút `drain` (`5/s`, `fuel_drain` mỗi `60` tick) | Đèn `< 30` cho `wander` tới hút; phát `fuel_drain` ở tick `60`; trúng Pulse `+15`; châm `>= 30` đẩy ra | `tests/core.test.ts`, `p3-shade-drain-and-dawn-win` |
+| P3-R3 | Luật thắng `dawn_survived` (`>= ceil(0.6*N)`), thời gian `240/270/300s` | Không thắng sớm khi thắp đủ đèn; kiểm tra `no_flames` trước `dawn`; cộng `50+floor(fuel)` & `50*flames` | `tests/core.test.ts`, `p1-pulse-and-win` |
+| P3-R4 | Sức chứa tăng dần `10 + 2 * successful_lights` (tối đa `20`) | `player.capacity` tăng `+2` sau mỗi lần thắp/thắp lại thành công, trần `20` | `tests/core.test.ts`, `p3-fuel-refuel-relight` |
+| P3-R5 | Chế độ mù màu & phân biệt đèn không cần màu | Bật "Bảng màu dễ phân biệt" lưu `localStorage`, `#00B3FF` cho Bóng Mực, `#FFFFFF + ⚠`; đèn tắt xẹp `20%` + vết rách, `<30` nhấp nháy `1 Hz` | `src/render/scene.ts`, `hud.ts`, Chrome QA |
 
 ## Phase 4 (Ticket-04)
 *(Chưa phát hành)*
