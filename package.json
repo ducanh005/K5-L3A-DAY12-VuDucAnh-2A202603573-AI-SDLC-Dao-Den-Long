@@ -1,15 +1,16 @@
 {
   "name": "dao-den-long",
-  "version": "0.1.0",
+  "version": "0.2.0-phase1",
   "private": true,
   "type": "module",
-  "description": "Dao Den Long - 3D third-person game with deterministic headless core (Day 12 AI SDLC)",
+  "description": "Dao Den Long - 3D third-person game with Test Contract v1.0 headless simulation (Day 12 AI SDLC)",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build",
+    "build:headless": "esbuild src/headless/cli.ts --bundle --platform=node --format=esm --outfile=dist-headless/cli.js",
+    "build": "tsc --noEmit && vite build && npm run build:headless",
     "preview": "vite preview",
     "test": "vitest run",
-    "headless": "tsx src/headless/cli.ts",
+    "headless": "node dist-headless/cli.js",
     "verify": "node scripts/verify.mjs",
     "prepare": "git config core.hooksPath .githooks || true"
   },
