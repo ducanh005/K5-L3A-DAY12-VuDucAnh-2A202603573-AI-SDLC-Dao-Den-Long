@@ -5,6 +5,7 @@ import type {
   FrameInput,
   InputState,
   InputsFile,
+  NightNumber,
   ScenarioConfig,
   Vec3Tuple,
 } from '../core/types.js';
@@ -12,7 +13,7 @@ import { createWorld, FIXED_DT, formatSnapshot, stepWorld } from '../core/world.
 
 interface CliArgs {
   seed: number;
-  night: number;
+  night: NightNumber;
   ticks: number;
   snapshotEvery: number;
   scenarioPath?: string;
@@ -86,8 +87,8 @@ function parseArgs(argv: string[]): CliArgs {
   if (seed === undefined || !Number.isInteger(seed)) {
     throw new ValidationError('--seed <int> is required and must be an integer', 1);
   }
-  if (!Number.isInteger(night) || night < 1) {
-    throw new ValidationError('--night must be an integer >= 1', 1);
+  if (!Number.isInteger(night) || night < 1 || night > 3) {
+    throw new ValidationError('--night must be 1, 2, or 3', 1);
   }
   if (ticks === undefined || !Number.isInteger(ticks) || ticks < 0) {
     throw new ValidationError('--ticks <int> is required and must be an integer >= 0', 1);
@@ -96,7 +97,15 @@ function parseArgs(argv: string[]): CliArgs {
     throw new ValidationError('--snapshot-every must be an integer >= 1', 1);
   }
 
-  return { seed, night, ticks, snapshotEvery, scenarioPath, inputsPath, outPath };
+  return {
+    seed,
+    night: night as NightNumber,
+    ticks,
+    snapshotEvery,
+    scenarioPath,
+    inputsPath,
+    outPath,
+  };
 }
 
 function loadScenario(filePath: string): ScenarioConfig {
@@ -125,25 +134,27 @@ function loadScenario(filePath: string): ScenarioConfig {
     if (parsed.player.pos !== undefined && !isVec3Tuple(parsed.player.pos)) {
       throw new ValidationError('scenario.player.pos must be [x, y, z]', 2);
     }
-    if (
-      parsed.player.carried !== undefined &&
-      (typeof parsed.player.carried !== 'number' || !Number.isFinite(parsed.player.carried) || parsed.player.carried < 0)
-    ) {
-      throw new ValidationError('scenario.player.carried must be a non-negative number', 2);
-    }
-    if (
-      parsed.player.flames !== undefined &&
-      (typeof parsed.player.flames !== 'number' || !Number.isFinite(parsed.player.flames) || parsed.player.flames < 0)
-    ) {
-      throw new ValidationError('scenario.player.flames must be a non-negative number', 2);
+    for (const k of [
+      'carried',
+      'flames',
+      'invuln_ticks',
+      'dash_cd_ticks',
+      'pulse_cd_ticks',
+      'charm_ticks',
+    ] as const) {
+      if (
+        parsed.player[k] !== undefined &&
+        (typeof parsed.player[k] !== 'number' || !Number.isFinite(parsed.player[k]) || (parsed.player[k] as number) < 0)
+      ) {
+        throw new ValidationError(`scenario.player.${k} must be a non-negative number`, 2);
+      }
     }
   }
 
-  if (parsed.random_motes !== undefined && typeof parsed.random_motes !== 'boolean') {
-    throw new ValidationError('scenario.random_motes must be boolean', 2);
-  }
-  if (parsed.random_shades !== undefined && typeof parsed.random_shades !== 'boolean') {
-    throw new ValidationError('scenario.random_shades must be boolean', 2);
+  for (const b of ['random_motes', 'random_shades', 'random_drifters', 'wind_enabled'] as const) {
+    if (parsed[b] !== undefined && typeof parsed[b] !== 'boolean') {
+      throw new ValidationError(`scenario.${b} must be boolean`, 2);
+    }
   }
 
   if (parsed.motes !== undefined) {
@@ -156,6 +167,14 @@ function loadScenario(filePath: string): ScenarioConfig {
         !(isPlainObject(m) && isVec3Tuple(m.pos) && (m.id === undefined || typeof m.id === 'string'))
       ) {
         throw new ValidationError('Each mote in scenario.motes must be [x,y,z] or {id?, pos:[x,y,z]}', 2);
+      }
+      if (isPlainObject(m)) {
+        if (m.kind !== undefined && m.kind !== 'random' && m.kind !== 'dropped') {
+          throw new ValidationError('scenario.motes[].kind must be "random" or "dropped"', 2);
+        }
+        if (m.ttl_s !== undefined && m.ttl_s !== null && (typeof m.ttl_s !== 'number' || !Number.isFinite(m.ttl_s) || m.ttl_s < 0)) {
+          throw new ValidationError('scenario.motes[].ttl_s must be null or non-negative number', 2);
+        }
       }
     }
   }
@@ -170,6 +189,50 @@ function loadScenario(filePath: string): ScenarioConfig {
         !(isPlainObject(s) && isVec3Tuple(s.pos) && (s.id === undefined || typeof s.id === 'string'))
       ) {
         throw new ValidationError('Each shade in scenario.shades must be {id?, pos:[x,y,z]} or [x,y,z]', 2);
+      }
+      if (
+        isPlainObject(s) &&
+        s.state !== undefined &&
+        !['spawning', 'wander', 'chase', 'recoil', 'stunned'].includes(String(s.state))
+      ) {
+        throw new ValidationError('Invalid shade state in scenario.shades', 2);
+      }
+    }
+  }
+
+  if (parsed.drifters !== undefined) {
+    if (!Array.isArray(parsed.drifters)) {
+      throw new ValidationError('scenario.drifters must be an array', 2);
+    }
+    for (const d of parsed.drifters) {
+      if (!isPlainObject(d) || !isVec3Tuple(d.pos)) {
+        throw new ValidationError('Each drifter in scenario.drifters must have pos:[x,y,z]', 2);
+      }
+      if (d.state !== undefined && !['idle', 'chase', 'flee'].includes(String(d.state))) {
+        throw new ValidationError('scenario.drifters[].state must be idle, chase, or flee', 2);
+      }
+      if (d.stolen !== undefined && (typeof d.stolen !== 'number' || !Number.isFinite(d.stolen) || d.stolen < 0)) {
+        throw new ValidationError('scenario.drifters[].stolen must be a non-negative number', 2);
+      }
+    }
+  }
+
+  if (parsed.charms !== undefined) {
+    if (!Array.isArray(parsed.charms)) {
+      throw new ValidationError('scenario.charms must be an array', 2);
+    }
+    for (const c of parsed.charms) {
+      if (!isPlainObject(c)) {
+        throw new ValidationError('Each charm in scenario.charms must be an object', 2);
+      }
+      if (c.pos !== undefined && !isVec3Tuple(c.pos)) {
+        throw new ValidationError('scenario.charms[].pos must be [x, y, z]', 2);
+      }
+      if (c.available !== undefined && typeof c.available !== 'boolean') {
+        throw new ValidationError('scenario.charms[].available must be boolean', 2);
+      }
+      if (c.respawn_s !== undefined && (typeof c.respawn_s !== 'number' || !Number.isFinite(c.respawn_s) || c.respawn_s < 0)) {
+        throw new ValidationError('scenario.charms[].respawn_s must be a non-negative number', 2);
       }
     }
   }
@@ -257,7 +320,7 @@ function loadInputs(filePath: string): FrameInput[] {
     ) {
       throw new ValidationError('frame.cam_yaw_deg must be a finite number', 2);
     }
-    for (const key of ['jump', 'interact', 'pulse', 'dash'] as const) {
+    for (const key of ['jump', 'interact', 'pulse', 'dash', 'pause'] as const) {
       if (frame[key] !== undefined && typeof frame[key] !== 'boolean') {
         throw new ValidationError(`frame.${key} must be a boolean`, 2);
       }
@@ -289,6 +352,7 @@ function main(): void {
       interact: false,
       pulse: false,
       dash: false,
+      pause: false,
     };
 
     let frameIdx = 0;
@@ -301,6 +365,7 @@ function main(): void {
         if (f.interact !== undefined) currentInput.interact = f.interact;
         if (f.pulse !== undefined) currentInput.pulse = f.pulse;
         if (f.dash !== undefined) currentInput.dash = f.dash;
+        if (f.pause !== undefined) currentInput.pause = f.pause;
       }
 
       world = stepWorld(world, currentInput, FIXED_DT);
@@ -313,7 +378,7 @@ function main(): void {
         lines.push(JSON.stringify(formatSnapshot(world)));
       }
 
-      if (world.state !== 'playing') {
+      if (world.state === 'won' || world.state === 'lost') {
         break;
       }
     }
