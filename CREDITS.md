@@ -10,6 +10,10 @@
 - **`Fox.glb`** (`CC0 1.0`) — Rigged fox model by Tomás Laulhé / PixelMannen from `KhronosGroup/glTF-Sample-Assets` (`Models/Fox/`), re-shaded in-scene with glowing purple-black ink material for Ink Shadows (`Bóng Mực`).
 - **`grasslight-big.jpg` & `spark1.png`** (`MIT` License) — Terrain grass texture and additive particle sprite from `mrdoob/three.js` examples (`examples/textures/`).
 
-## Audio & Lore
+## Audio, Lore & AI SDLC Tools
 - **Audio:** Procedurally synthesized in real time via WebAudio API (`src/render/audio.ts`). No external copyrighted sound files used.
+- **Fonts & UI:** System UI stack (`system-ui, -apple-system, sans-serif`) and Unicode/Emoji symbols (`🔥`, `⚠`, `➤`).
 - **Characters & Lore:** Original concept from **Day 12 — AI SDLC: Đảo Đèn Lồng** (`VinUni-AI20k/K5-L3-LAB-Day12-AI-SDLC`).
+- **AI Tools Used in Development:**
+  - **Antigravity (Google DeepMind)** — Orchestrator + `browser` QA/Lab Reader subagent + `research` independent code/contract reviewer subagent for architecture, TypeScript simulation, Three.js visuals, test authoring, and verification workflows.
+  - **VinUni AI20k Lab Board** — Source specification (`PRD-0`, `TICKET-02`, `TICKET-03`, `TICKET-04`) and Test Contracts `v1.0–v1.3`.

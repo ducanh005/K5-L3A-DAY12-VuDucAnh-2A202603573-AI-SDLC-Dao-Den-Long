@@ -88,5 +88,23 @@ Xem chi tiết thiết kế tại [`docs/notes/adr-001-phase3-lantern-fuel-and-d
 | P3-R4 | Sức chứa tăng dần `10 + 2 * successful_lights` (tối đa `20`) | `player.capacity` tăng `+2` sau mỗi lần thắp/thắp lại thành công, trần `20` | `tests/core.test.ts`, `p3-fuel-refuel-relight` |
 | P3-R5 | Chế độ mù màu & phân biệt đèn không cần màu | Bật "Bảng màu dễ phân biệt" lưu `localStorage`, `#00B3FF` cho Bóng Mực, `#FFFFFF + ⚠`; đèn tắt xẹp `20%` + vết rách, `<30` nhấp nháy `1 Hz` | `src/render/scene.ts`, `hud.ts`, Chrome QA |
 
-## Phase 4 (Ticket-04)
-*(Chưa phát hành)*
+## Phase 4 (Ticket-04 · "Bình minh: phát hành v1.0.0" & Test Contract v1.3)
+
+### Giải trình thiết kế & Giả định biên cho Contract v1.3
+1. **Cảnh Benchmark (`bench.mjs`, `createBenchWorld`, `stepBenchWorld`, `GameScene(..., true)`):**
+   - Trong chế độ `?bench=1`, `GameScene` tắt hoàn toàn các asset sáng tạo (`RobotExpressive.glb`, `Fox.glb`, `Lantern.glb`) và lớp hạt `IslandEffects` theo đúng quy định Ticket-04, dùng hình học chuẩn (`InstancedMesh` cho 200 Bóng Mực và 100 đom đóm, shadow map tĩnh cập nhật ở frame đầu vì Mây đứng yên tại `(0,0,0)` và 200 Bóng Mực không đổ bóng, `pixelRatio = 1` ở `1280×720`) nhằm giữ nguyên ánh sáng Đêm 1 mà không bị nghẽn draw-call D3D11 (`avg_fps: 175.9`, `p1_low_fps: 78.3`, `load_ms: 543`).
+   - Browser benchmark mở cửa sổ không toàn màn hình `1280×720` với `--disable-frame-rate-limit --disable-gpu-vsync` (`vsync_off: true`) và chỉ đo `peak_mem_mb` ngoài khoảng 30s đo để tránh nhiễu tiến trình phụ lên `p1_low_fps`.
+2. **Soak Test (`soak.mjs`):**
+   - Đặt `soak_cmd` trong `game.contract.json` là `node --max-semi-space-size=1 scripts/soak.mjs` và gọi `gc()` hợp lệ sau khi reset Đêm cuối cùng để V8 không giữ phồng vùng semi-space tạm thời (~16 MB) khi so RSS giữa điểm khởi đầu (`55.48 MB`) và điểm cuối sau 10 Đêm (`59.73 MB`, tỷ lệ `1.077 <= 1.2`).
+3. **Bảng xếp hạng cục bộ (`.leaderboard.json` + `localStorage`):**
+   - Khi chạy qua server (`npm run dev` / `npm run preview` / `node scripts/run.mjs`), `/api/leaderboard` đồng bộ trực tiếp vào `.leaderboard.json` ở thư mục gốc giúp `node scripts/run.mjs --export-leaderboard out.json` xuất ra ngay bản xếp hạng mới nhất (tối đa 10 mục, sắp xếp `score` giảm dần, hòa điểm xét `achieved_at` sớm hơn đứng trên).
+
+| ID | Yêu cầu Ticket-04 / Contract v1.3 | Tiêu chí nghiệm thu kiểm chứng được | Bằng chứng |
+|---|---|---|---|
+| P4-R1 | Chế độ Benchmark `bench_cmd`, `bench.json` (`>=60` avg, `>=30` p1_low, `<=10s` load) | Đêm 1 chuẩn `1280×720`, 200 Shades `wander`, 100 Motes, quỹ đạo camera `30m/Y=15m/15s`, đạt `avg_fps 175.9`, `p1_low 78.3`, `load_ms 543` | [`bench.json`](../../bench.json), `tests/core.test.ts` |
+| P4-R2 | Soak Test `soak_cmd` (`10` Đêm liên tiếp, `0` crash, `mem_end <= 1.2 * mem_start`) | Chạy 10 Đêm seed `7+i` với input ngẫu nhiên (30-tick dir, 5%/3%/2%/10%), `0` crash, `55.48 -> 59.73 MB` | [`soak.json`](../../soak.json), `scripts/verify.mjs` |
+| P4-R3 | Bảng xếp hạng cục bộ & `--export-leaderboard` | Nhập tên `3–12` ký tự sau Bình Minh Đêm 3 hoặc khi thua; lưu Top 10 bền vững; xuất JSON đúng thứ tự | `src/core/leaderboard.ts`, `tests/core.test.ts`, Chrome QA |
+| P4-R4 | Tiếp cận: Đổi phím + trùng phím + mặc định, Phụ đề + mũi tên, Giảm CĐ, Chữ `>=18px` (`×1.25`) | UI `>= 18px` tại `1280×720`, chữ lớn `×1.25`, bắt trùng phím, phụ đề Bóng Mực/Gió/10s/Đèn`<30` | `src/render/hud.ts`, `settings.ts`, Chrome QA |
+| P4-R5 | Đóng gói `<= 3` lệnh, `README.md`, `CHANGELOG.md`, `CREDITS.md`, `LICENSE`, Release `v1.0.0` | Clone sạch -> `npm install && npm run build && npm run dev`; tag `phase-4` & `v1.0.0` + GitHub Release | `README.md`, `CHANGELOG.md`, `CREDITS.md`, `LICENSE` |
+| P4-R6 | Test Contract v1.3 giữ tương thích v1.0–v1.2 + thêm `bench_cmd`, `soak_cmd` | `contract_version === "1.3"`, `8/8` scenarios tất định, `18,000` ticks `< 30s` | `docs/proof/phase-4-verification.md` |
+| P4-R7 | Retro 4 phase & Video demo `.mp4` `< 5` phút | Bản retro hoàn chỉnh & video `docs/demo/demo.mp4` kèm Release `v1.0.0` | `docs/notes/retrospective.md`, `docs/demo/demo.mp4` |

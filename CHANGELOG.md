@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.0.0] - Phase 4 (TICKET-04 "Bình minh: phát hành v1.0.0" & Test Contract v1.3)
+### Added
+- **Contract v1.3 (`game.contract.json`, `package.json`):** Updated `contract_version` to `"1.3"`, bumped package version to `1.0.0`, and registered `run_cmd`, `bench_cmd`, and `soak_cmd`.
+- **Standardized 3D Benchmark Mode (`scripts/bench.mjs`, `createBenchWorld`, `stepBenchWorld`, `GameScene`):** Spawns fixed Night 1 benchmark scene (`1280×720`, vsync off, `200` wander Shades, `100` Motes, `L1..L3` lit with `fuel = 100`, camera orbit radius `30m` at `Y=15m`, 15s/rev CCW, 3s warmup + `--duration` measure), disables creative GLTF skins/particles, uses instanced rendering, and writes `bench.json` (`avg_fps: 175.9`, `p1_low_fps: 78.3`, `load_ms: 543`).
+- **10-Night Headless Soak Test (`scripts/soak.mjs`):** Runs 10 consecutive Nights in a single Node process with seeded randomized inputs and `--max-semi-space-size=1`, producing `soak.json` (`0` crashes, `mem_start_mb: 55.48 -> mem_end_mb: 59.73`).
+- **Local Top-10 Leaderboard (`src/core/leaderboard.ts`, `src/render/leaderboard.ts`, `scripts/run.mjs`, `vite.config.ts`):** Name entry (`3–12` chars) after Dawn win or any Night loss, persistent local disk storage (`.leaderboard.json` + `localStorage`), main menu Leaderboard table view, and `--export-leaderboard <out.json>` CLI.
+- **Accessibility (`src/render/settings.ts`, `src/render/hud.ts`, `src/main.ts`):** Rebindable controls (9 actions) with duplicate detection & "Khôi phục mặc định", visual subtitles + edge directional indicator for Ink Shadows/Wind/Final 10s/Low Fuel `<30`, Reduced Motion mode, and minimum `>= 18px` base UI font with `×1.25` Large Text toggle.
+- **Release Documentation & Artifacts:** Updated `README.md`, `CREDITS.md`, `AGENTS.md`, `docs/notes/assumptions.md`, `docs/notes/ai-log.md`, `docs/notes/retrospective.md`, `docs/demo/demo.mp4`, and `docs/proof/phase-4-*`.
+
 ## [0.4.0-phase3] - Phase 3 (TICKET-03 "Đèn cạn dầu" & Test Contract v1.2)
 ### Breaking Changes (Thay đổi phá vỡ tương thích so với v1.1)
 - **Replaced early `all_lit` win with dawn survival (`dawn_survived`) / `lanterns_short`:** Lighting all lanterns no longer ends the Night early; players must survive until dawn (`240s / 270s / 300s`) with at least `ceil(0.6 * totalLanterns)` lanterns still lit (`3/5`, `4/6`, `5/7`), otherwise losing with `reason: "lanterns_short"` (replacing `"dawn"`).
