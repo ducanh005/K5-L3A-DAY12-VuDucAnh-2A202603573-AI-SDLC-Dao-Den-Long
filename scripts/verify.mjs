@@ -62,7 +62,7 @@ function validateJsonl(jsonlText, label) {
     !Array.isArray(snap0.drifters) ||
     !Array.isArray(snap0.charms)
   ) {
-    throw new Error(`${label}: snapshot missing Contract v1.2 required fields`);
+    throw new Error(`${label}: snapshot missing Contract v1.3 required fields`);
   }
   const last = lines[lines.length - 1];
   if (last.type !== 'end' || !['playing', 'paused', 'won', 'lost'].includes(last.state)) {
@@ -97,8 +97,11 @@ function main() {
   console.log(testOut);
   sections.push({ title: 'Unit & Contract Tests', command: 'npm test', output: testOut });
 
-  console.log('4. Checking Test Contract v1.2 headless determinism & JSONL schema across all scenarios...');
+  console.log('4. Checking Test Contract v1.3 headless determinism & JSONL schema across all scenarios...');
   const contract = JSON.parse(readFileSync(resolve(process.cwd(), 'game.contract.json'), 'utf8'));
+  if (contract.contract_version !== '1.3' || !contract.bench_cmd || !contract.soak_cmd) {
+    throw new Error(`game.contract.json must declare contract_version 1.3, bench_cmd, and soak_cmd`);
+  }
   const scenariosDir = resolve(process.cwd(), 'tests/scenarios');
   const scenarioFiles = readdirSync(scenariosDir)
     .filter((f) => f.endsWith('.scenario.json'))
@@ -179,6 +182,26 @@ function main() {
       title: 'Malformed Inputs Exit Code Check',
       command: 'node dist-headless/cli.js --seed 1 --night 1 --inputs <bad-inputs.json> --ticks 10 --out <tmp>',
       output: `Exit code: ${badCheck.status}\nStderr: ${badCheck.stderr.trim()}`,
+    });
+
+    // Verify 3-night headless soak smoke & leaderboard export command
+    const soakOut = join(tmpDir, 'soak-check.json');
+    runCmd(`${contract.soak_cmd} --seed 7 --nights 3 --out "${soakOut}"`);
+    const soakJson = JSON.parse(readFileSync(soakOut, 'utf8'));
+    if (soakJson.nights !== 3 || soakJson.crashes !== 0 || soakJson.mem_end_mb > 1.2 * soakJson.mem_start_mb) {
+      throw new Error(`Soak smoke check failed: ${JSON.stringify(soakJson)}`);
+    }
+    const lbOut = join(tmpDir, 'leaderboard-check.json');
+    runCmd(`${contract.run_cmd} --export-leaderboard "${lbOut}"`);
+    const lbJson = JSON.parse(readFileSync(lbOut, 'utf8'));
+    if (!Array.isArray(lbJson.entries)) {
+      throw new Error('Leaderboard export must return { entries: [...] }');
+    }
+    console.log(`   [OK] Soak smoke (3 nights, 0 crashes, ${soakJson.mem_start_mb}->${soakJson.mem_end_mb} MB) & Leaderboard export -> OK`);
+    sections.push({
+      title: 'Phase 4 Soak & Leaderboard Export Smoke Check',
+      command: `${contract.soak_cmd} --seed 7 --nights 3 --out <tmp> && ${contract.run_cmd} --export-leaderboard <tmp>`,
+      output: `Soak: nights=${soakJson.nights}, crashes=${soakJson.crashes}, mem=${soakJson.mem_start_mb}->${soakJson.mem_end_mb} MB\nLeaderboard export entries: ${lbJson.entries.length}`,
     });
   } finally {
     rmSync(tmpDir, { recursive: true, force: true });

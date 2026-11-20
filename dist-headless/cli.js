@@ -1,6 +1,48 @@
 // src/headless/cli.ts
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
+
+// src/core/leaderboard.ts
+var LEADERBOARD_LIMIT = 10;
+var VALID_NAME_RE = /^[A-Za-z0-9_\u00C0-\u024F\u1E00-\u1EFF]{3,12}$/;
+function validateLeaderboardName(name) {
+  return VALID_NAME_RE.test(name.trim());
+}
+function sortLeaderboardEntries(entries) {
+  return [...entries].sort((a, b) => {
+    if (b.score !== a.score) return b.score - a.score;
+    const ta = Date.parse(a.achieved_at);
+    const tb = Date.parse(b.achieved_at);
+    if (Number.isFinite(ta) && Number.isFinite(tb) && ta !== tb) {
+      return ta - tb;
+    }
+    return a.achieved_at.localeCompare(b.achieved_at);
+  }).slice(0, LEADERBOARD_LIMIT);
+}
+function sanitizeLeaderboardEntries(raw) {
+  if (!Array.isArray(raw)) return [];
+  const valid = [];
+  const seen = /* @__PURE__ */ new Set();
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const e = item;
+    if (typeof e.name === "string" && validateLeaderboardName(e.name) && typeof e.score === "number" && Number.isFinite(e.score) && e.score >= 0 && typeof e.nights_won === "number" && Number.isInteger(e.nights_won) && e.nights_won >= 0 && e.nights_won <= 3 && typeof e.achieved_at === "string" && !Number.isNaN(Date.parse(e.achieved_at)) && typeof e.seed === "number" && Number.isFinite(e.seed)) {
+      const normalized = {
+        name: e.name.trim(),
+        score: Math.round(e.score),
+        nights_won: e.nights_won,
+        achieved_at: e.achieved_at,
+        seed: Math.trunc(e.seed)
+      };
+      const dedupeKey = `${normalized.name}|${normalized.score}|${normalized.nights_won}|${normalized.achieved_at}|${normalized.seed}`;
+      if (!seen.has(dedupeKey)) {
+        seen.add(dedupeKey);
+        valid.push(normalized);
+      }
+    }
+  }
+  return sortLeaderboardEntries(valid);
+}
 
 // src/core/maps.ts
 function r3(n) {
@@ -1538,6 +1580,24 @@ function formatSnapshot(world) {
 }
 
 // src/headless/cli.ts
+function tryHandleLeaderboardExport(argv) {
+  const idx = argv.indexOf("--export-leaderboard");
+  if (idx === -1) return false;
+  const outPath = argv[idx + 1];
+  if (!outPath) {
+    throw new ValidationError("Missing value for --export-leaderboard", 1);
+  }
+  const storePath = resolve(process.cwd(), ".leaderboard.json");
+  let entries = [];
+  if (existsSync(storePath)) {
+    const raw = JSON.parse(readFileSync(storePath, "utf8"));
+    entries = sanitizeLeaderboardEntries(raw.entries);
+  }
+  const resolvedOut = resolve(process.cwd(), outPath);
+  mkdirSync(dirname(resolvedOut), { recursive: true });
+  writeFileSync(resolvedOut, JSON.stringify({ entries }, null, 2) + "\n", "utf8");
+  return true;
+}
 var ValidationError = class extends Error {
   constructor(message, exitCode) {
     super(message);
@@ -1806,7 +1866,11 @@ function loadInputs(filePath) {
 }
 function main() {
   try {
-    const args = parseArgs(process.argv.slice(2));
+    const argv = process.argv.slice(2);
+    if (tryHandleLeaderboardExport(argv)) {
+      process.exit(0);
+    }
+    const args = parseArgs(argv);
     const scenario = args.scenarioPath ? loadScenario(args.scenarioPath) : void 0;
     const frames = args.inputsPath ? loadInputs(args.inputsPath) : [];
     let world = createWorld({

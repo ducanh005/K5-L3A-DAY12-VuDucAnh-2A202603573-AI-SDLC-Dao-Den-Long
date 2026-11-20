@@ -4,8 +4,23 @@ import os from 'node:os';
 import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { getSupportY, isBlockedByObstacle } from '../src/core/maps.js';
+import {
+  type LeaderboardEntry,
+  sanitizeLeaderboardEntries,
+  sortLeaderboardEntries,
+  validateLeaderboardName,
+} from '../src/core/leaderboard.js';
 import type { InputState } from '../src/core/types.js';
-import { createWorld, DEFAULT_TUNING, FIXED_DT, formatSnapshot, stepWorld } from '../src/core/world.js';
+import {
+  createBenchWorld,
+  createWorld,
+  DEFAULT_TUNING,
+  FIXED_DT,
+  formatSnapshot,
+  stepBenchWorld,
+  stepWorld,
+} from '../src/core/world.js';
+import { cloneDefaultSettings, findDuplicateKeys } from '../src/render/settings.js';
 
 function baseInput(overrides: Partial<InputState> = {}): InputState {
   return {
@@ -20,11 +35,20 @@ function baseInput(overrides: Partial<InputState> = {}): InputState {
   };
 }
 
-describe('Phase 3 — Ticket-03 ("Đèn cạn dầu") & Test Contract v1.2', () => {
-  it('matches tuning values in game.contract.json v1.2 exactly', () => {
+describe('Phase 3–4 — Ticket-03/04 & Test Contract v1.3', () => {
+  it('matches tuning values and v1.3 commands in game.contract.json exactly', () => {
     const raw = readFileSync(resolve(process.cwd(), 'game.contract.json'), 'utf8');
-    const contract = JSON.parse(raw) as { contract_version: string; tuning: typeof DEFAULT_TUNING };
-    expect(contract.contract_version).toBe('1.2');
+    const contract = JSON.parse(raw) as {
+      contract_version: string;
+      run_cmd: string;
+      bench_cmd: string;
+      soak_cmd: string;
+      tuning: typeof DEFAULT_TUNING;
+    };
+    expect(contract.contract_version).toBe('1.3');
+    expect(contract.run_cmd).toBeTruthy();
+    expect(contract.bench_cmd).toBeTruthy();
+    expect(contract.soak_cmd).toBeTruthy();
     expect(contract.tuning).toEqual(DEFAULT_TUNING);
   });
 
@@ -354,6 +378,68 @@ describe('Phase 3 — Ticket-03 ("Đèn cạn dầu") & Test Contract v1.2', () 
         { encoding: 'utf8' },
       );
       expect(badRes.status).toBe(2);
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it('supports Phase 4 benchmark world (200 wander shades, 100 motes), leaderboard rules, and duplicate key detection', () => {
+    let bench = createBenchWorld(42);
+    expect(bench.night).toBe(1);
+    expect(bench.player.pos).toEqual([0, 0, 0]);
+    expect(bench.shades).toHaveLength(200);
+    expect(bench.shades.every((s) => s.state === 'wander')).toBe(true);
+    expect(bench.motes).toHaveLength(100);
+    expect(bench.lanterns.slice(0, 3).every((l) => l.lit && l.fuel_ticks === 6000)).toBe(true);
+    expect(bench.lanterns.slice(3).every((l) => !l.lit)).toBe(true);
+
+    const beforePos = bench.shades.map((s) => [...s.pos]);
+    for (let i = 0; i < 60; i++) {
+      bench = stepBenchWorld(bench, FIXED_DT);
+    }
+    expect(bench.sim_tick).toBe(60);
+    expect(bench.lanterns.slice(0, 3).every((l) => l.lit && l.fuel_ticks === 6000)).toBe(true);
+    expect(bench.motes).toHaveLength(100);
+    expect(bench.player.pos).toEqual([0, 0, 0]);
+    expect(bench.shades.some((s, idx) => s.pos[0] !== beforePos[idx][0] || s.pos[2] !== beforePos[idx][2])).toBe(true);
+
+    // Leaderboard name validation, tie-break by earlier achieved_at, and top 10 truncation
+    expect(validateLeaderboardName('Ab')).toBe(false);
+    expect(validateLeaderboardName('May_01')).toBe(true);
+    expect(validateLeaderboardName('MâyĐèn01')).toBe(true);
+    expect(validateLeaderboardName('TooLongName123')).toBe(false);
+    expect(validateLeaderboardName('Bad Name!')).toBe(false);
+
+    const sample: LeaderboardEntry[] = Array.from({ length: 12 }, (_, i) => ({
+      name: `Player_${i}`,
+      score: i < 2 ? 900 : 100 + i * 10,
+      nights_won: 1,
+      achieved_at: i === 0 ? '2026-11-20T10:05:00+07:00' : i === 1 ? '2026-11-20T10:00:00+07:00' : `2026-11-20T09:${String(i).padStart(2, '0')}:00+07:00`,
+      seed: 42 + i,
+    }));
+    const sorted = sortLeaderboardEntries(sanitizeLeaderboardEntries([...sample, sample[0], sample[1]]));
+    expect(sorted).toHaveLength(10);
+    expect(sorted[0].name).toBe('Player_1'); // earlier timestamp wins tie
+    expect(sorted[1].name).toBe('Player_0');
+    expect(sorted.filter((e) => e.name === 'Player_1')).toHaveLength(1); // deduplicated on sync
+
+    // Duplicate key detection & default reset
+    const defaults = cloneDefaultSettings();
+    expect(findDuplicateKeys(defaults.keyBindings)).toEqual([]);
+    const dupBindings = { ...defaults.keyBindings, jump: 'KeyW' };
+    const dups = findDuplicateKeys(dupBindings);
+    expect(dups).toHaveLength(1);
+    expect(dups[0].code).toBe('KeyW');
+    expect(dups[0].actions).toEqual(['moveForward', 'jump']);
+
+    // Export leaderboard CLI check
+    const tmpDir = mkdtempSync(join(os.tmpdir(), 'ddl-p4-lb-'));
+    try {
+      const lbOut = join(tmpDir, 'out.json');
+      const expRes = spawnSync('node', ['scripts/run.mjs', '--export-leaderboard', lbOut], { encoding: 'utf8' });
+      expect(expRes.status).toBe(0);
+      const parsed = JSON.parse(readFileSync(lbOut, 'utf8')) as { entries: unknown[] };
+      expect(Array.isArray(parsed.entries)).toBe(true);
     } finally {
       rmSync(tmpDir, { recursive: true, force: true });
     }

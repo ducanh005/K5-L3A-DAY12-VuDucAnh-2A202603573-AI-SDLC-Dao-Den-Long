@@ -1,5 +1,6 @@
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
+import { sanitizeLeaderboardEntries } from '../core/leaderboard.js';
 import type {
   EndRecord,
   FrameInput,
@@ -10,6 +11,25 @@ import type {
   Vec3Tuple,
 } from '../core/types.js';
 import { createWorld, FIXED_DT, formatSnapshot, stepWorld } from '../core/world.js';
+
+function tryHandleLeaderboardExport(argv: string[]): boolean {
+  const idx = argv.indexOf('--export-leaderboard');
+  if (idx === -1) return false;
+  const outPath = argv[idx + 1];
+  if (!outPath) {
+    throw new ValidationError('Missing value for --export-leaderboard', 1);
+  }
+  const storePath = resolve(process.cwd(), '.leaderboard.json');
+  let entries = [] as ReturnType<typeof sanitizeLeaderboardEntries>;
+  if (existsSync(storePath)) {
+    const raw = JSON.parse(readFileSync(storePath, 'utf8')) as { entries?: unknown };
+    entries = sanitizeLeaderboardEntries(raw.entries);
+  }
+  const resolvedOut = resolve(process.cwd(), outPath);
+  mkdirSync(dirname(resolvedOut), { recursive: true });
+  writeFileSync(resolvedOut, JSON.stringify({ entries }, null, 2) + '\n', 'utf8');
+  return true;
+}
 
 interface CliArgs {
   seed: number;
@@ -342,7 +362,11 @@ function loadInputs(filePath: string): FrameInput[] {
 
 function main(): void {
   try {
-    const args = parseArgs(process.argv.slice(2));
+    const argv = process.argv.slice(2);
+    if (tryHandleLeaderboardExport(argv)) {
+      process.exit(0);
+    }
+    const args = parseArgs(argv);
     const scenario = args.scenarioPath ? loadScenario(args.scenarioPath) : undefined;
     const frames = args.inputsPath ? loadInputs(args.inputsPath) : [];
 

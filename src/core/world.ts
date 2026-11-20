@@ -1,5 +1,6 @@
 import { getMapSpec, getSupportY, isBlockedByObstacle } from './maps.js';
 import { nextRandom, nextRange, normalizeSeed } from './rng.js';
+export { nextRandom, nextRange, normalizeSeed } from './rng.js';
 import type {
   CharmState,
   ContractEvent,
@@ -1516,7 +1517,7 @@ export function stepWorld(
 }
 
 /**
- * Formats a SnapshotRecord conforming strictly to Test Contract v1.2.
+ * Formats a SnapshotRecord conforming strictly to Test Contract v1.3.
  */
 export function formatSnapshot(world: WorldState): SnapshotRecord {
   return {
@@ -1575,5 +1576,139 @@ export function formatSnapshot(world: WorldState): SnapshotRecord {
       available: c.available,
       respawn_s: round3(c.respawn_ticks / 60),
     })),
+  };
+}
+
+/**
+ * Creates the standardized Ticket-04 benchmark scene (Night 1):
+ * - Player frozen at (0,0,0)
+ * - L1..L3 lit with fuel=100, L4..L5 unlit
+ * - 200 wander Shades and 100 Motes spread deterministically across Night 1 island
+ */
+export function createBenchWorld(seed = 42): WorldState {
+  const base = createWorld({
+    seed,
+    night: 1,
+    scenario: {
+      player: { pos: [0, 0, 0], carried: 0, flames: 3 },
+      random_motes: false,
+      random_shades: false,
+      lanterns: [
+        { id: 'L1', lit: true, fuel: 100 },
+        { id: 'L2', lit: true, fuel: 100 },
+        { id: 'L3', lit: true, fuel: 100 },
+        { id: 'L4', lit: false, deposited: 0 },
+        { id: 'L5', lit: false, deposited: 0 },
+      ],
+    },
+  });
+
+  const lowFuelTicks = Math.round(base.tuning.low_fuel_threshold * 60);
+  let rngState = normalizeSeed(seed);
+  const shades: ShadeState[] = [];
+  for (let i = 0; i < 200; i++) {
+    let uRad: number;
+    let uAng: number;
+    let uWander: number;
+    [uRad, rngState] = nextRandom(rngState);
+    [uAng, rngState] = nextRandom(rngState);
+    [uWander, rngState] = nextRandom(rngState);
+    const r = Math.sqrt(8 * 8 + uRad * (37 * 37 - 8 * 8));
+    const ang = uAng * Math.PI * 2;
+    let pos: Vec3Tuple = [Math.cos(ang) * r, 0, Math.sin(ang) * r];
+    pos = enforceSafeRadiusXZ(1, pos, base.lanterns, base.tuning.safe_radius, lowFuelTicks);
+    shades.push({
+      id: `S${i + 1}`,
+      pos,
+      state: 'wander',
+      state_ticks_left: 0,
+      recoil_dir: [1, 0],
+      push_ticks_left: 0,
+      push_dir: [1, 0],
+      repel_ticks_left: 0,
+      repel_lantern_id: null,
+      wander_angle: uWander * Math.PI * 2,
+      target_lantern_id: null,
+      drain_ticks: 0,
+    });
+  }
+
+  const motes: MoteState[] = [];
+  for (let i = 0; i < 100; i++) {
+    let uRad: number;
+    let uAng: number;
+    [uRad, rngState] = nextRandom(rngState);
+    [uAng, rngState] = nextRandom(rngState);
+    const r = Math.sqrt(3 * 3 + uRad * (37 * 37 - 3 * 3));
+    const ang = uAng * Math.PI * 2;
+    motes.push({
+      id: `M${i + 1}`,
+      pos: [Math.cos(ang) * r, 0, Math.sin(ang) * r],
+      kind: 'random',
+      ttl_ticks: null,
+      just_spawned: false,
+    });
+  }
+
+  return {
+    ...base,
+    rngState,
+    shades,
+    motes,
+    next_mote_seq: 101,
+    next_shade_seq: 201,
+  };
+}
+
+/**
+ * Steps the Ticket-04 benchmark scene by 1 fixed tick:
+ * spawning, player input, damage, pickup, fuel decay, drain, and win/loss are disabled;
+ * the 200 Shades continue normal 'wander' movement respecting L1..L3 safe zones.
+ */
+export function stepBenchWorld(world: WorldState, dt = FIXED_DT): WorldState {
+  const lowFuelTicks = Math.round(world.tuning.low_fuel_threshold * 60);
+  const nextShades = world.shades.map((s) => {
+    const shade: ShadeState = {
+      ...s,
+      pos: [s.pos[0], s.pos[1], s.pos[2]],
+      state: 'wander',
+      wander_angle: s.wander_angle + 0.025,
+    };
+
+    const unlit = world.lanterns
+      .filter((l) => !l.lit)
+      .sort((a, b) => {
+        const da = distanceXZ(shade.pos, a.pos);
+        const db = distanceXZ(shade.pos, b.pos);
+        if (Math.abs(da - db) > 1e-6) return da - db;
+        return compareEntityId(a, b);
+      });
+
+    if (unlit.length > 0 && distanceXZ(shade.pos, unlit[0].pos) > 1.0) {
+      const target = unlit[0];
+      const step = Math.min(distanceXZ(shade.pos, target.pos), SHADE_WANDER_SPEED * dt);
+      const [ux, uz] = normDirXZ(target.pos[0] - shade.pos[0], target.pos[2] - shade.pos[2]);
+      shade.pos = moveWithObstacles(1, shade.pos, ux * step, uz * step, false);
+    } else {
+      const step = SHADE_WANDER_SPEED * dt;
+      shade.pos = moveWithObstacles(
+        1,
+        shade.pos,
+        Math.cos(shade.wander_angle) * step,
+        Math.sin(shade.wander_angle) * step,
+        false,
+      );
+    }
+
+    shade.pos = enforceSafeRadiusXZ(1, shade.pos, world.lanterns, world.tuning.safe_radius, lowFuelTicks);
+    return shade;
+  });
+
+  return {
+    ...world,
+    tick: world.tick + 1,
+    sim_tick: world.sim_tick + 1,
+    shades: nextShades,
+    last_events: [],
   };
 }
