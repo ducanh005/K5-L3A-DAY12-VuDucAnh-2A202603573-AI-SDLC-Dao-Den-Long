@@ -137,6 +137,7 @@ function loadScenario(filePath: string): ScenarioConfig {
     for (const k of [
       'carried',
       'flames',
+      'successful_lights',
       'invuln_ticks',
       'dash_cd_ticks',
       'pulse_cd_ticks',
@@ -193,9 +194,12 @@ function loadScenario(filePath: string): ScenarioConfig {
       if (
         isPlainObject(s) &&
         s.state !== undefined &&
-        !['spawning', 'wander', 'chase', 'recoil', 'stunned'].includes(String(s.state))
+        !['spawning', 'wander', 'chase', 'recoil', 'stunned', 'drain'].includes(String(s.state))
       ) {
         throw new ValidationError('Invalid shade state in scenario.shades', 2);
+      }
+      if (isPlainObject(s) && s.target_lantern_id !== undefined && typeof s.target_lantern_id !== 'string') {
+        throw new ValidationError('scenario.shades[].target_lantern_id must be a string', 2);
       }
     }
   }
@@ -256,6 +260,12 @@ function loadScenario(filePath: string): ScenarioConfig {
       }
       if (l.lit !== undefined && typeof l.lit !== 'boolean') {
         throw new ValidationError('scenario.lanterns[].lit must be a boolean', 2);
+      }
+      if (l.fuel !== undefined && (typeof l.fuel !== 'number' || !Number.isFinite(l.fuel) || l.fuel < 0 || l.fuel > 100)) {
+        throw new ValidationError('scenario.lanterns[].fuel must be a number in [0, 100]', 2);
+      }
+      if (l.ever_lit !== undefined && typeof l.ever_lit !== 'boolean') {
+        throw new ValidationError('scenario.lanterns[].ever_lit must be a boolean', 2);
       }
     }
   }

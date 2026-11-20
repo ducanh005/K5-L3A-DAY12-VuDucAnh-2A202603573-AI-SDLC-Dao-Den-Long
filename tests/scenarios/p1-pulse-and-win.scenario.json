@@ -7,11 +7,11 @@
     { "id": "S1", "pos": [0, 0, 4], "state": "chase" }
   ],
   "lanterns": [
-    { "id": "L1", "lit": true },
-    { "id": "L2", "lit": true },
-    { "id": "L3", "lit": true },
-    { "id": "L4", "lit": true },
+    { "id": "L1", "lit": true, "fuel": 90 },
+    { "id": "L2", "lit": true, "fuel": 90 },
+    { "id": "L3", "lit": true, "fuel": 90 },
+    { "id": "L4", "lit": true, "fuel": 90 },
     { "id": "L5", "pos": [0, 0, 10], "deposited": 3, "lit": false }
   ],
-  "time_left_s": 300
+  "time_left_s": 2.0
 }

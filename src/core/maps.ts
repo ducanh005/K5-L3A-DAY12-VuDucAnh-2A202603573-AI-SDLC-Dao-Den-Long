@@ -53,7 +53,7 @@ function normXZ(dx: number, dz: number): [number, number] {
 const NIGHT1_MAP: NightMapSpec = {
   night: 1,
   name: 'Đêm 1 — Đảo Bến',
-  duration_s: 300,
+  duration_s: 240,
   spawnPos: [0, 0, 0],
   lanterns: [
     { id: 'L1', pos: [0, 0, 25] },
@@ -77,7 +77,7 @@ const NIGHT1_MAP: NightMapSpec = {
 const NIGHT2_MAP: NightMapSpec = {
   night: 2,
   name: 'Đêm 2 — Đảo Cau',
-  duration_s: 330,
+  duration_s: 270,
   spawnPos: [0, 0, 0],
   lanterns: [
     { id: 'L1', pos: [0, 0, 20] },
@@ -110,7 +110,7 @@ const NIGHT2_MAP: NightMapSpec = {
 const NIGHT3_MAP: NightMapSpec = {
   night: 3,
   name: 'Đêm 3 — Đảo Chuông',
-  duration_s: 360,
+  duration_s: 300,
   spawnPos: [0, 0, 35],
   lanterns: [
     { id: 'L1', pos: [0, 6, 6] },

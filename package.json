@@ -1,9 +1,9 @@
 {
   "name": "dao-den-long",
-  "version": "0.3.0-phase2",
+  "version": "0.4.0-phase3",
   "private": true,
   "type": "module",
-  "description": "Dao Den Long - 3D third-person game across 3 islands with Test Contract v1.1 headless simulation (Day 12 AI SDLC)",
+  "description": "Dao Den Long - 3D third-person game across 3 islands with Test Contract v1.2 headless simulation (Day 12 AI SDLC)",
   "scripts": {
     "dev": "vite",
     "build:headless": "esbuild src/headless/cli.ts --bundle --platform=node --format=esm --outfile=dist-headless/cli.js",
