@@ -21,7 +21,7 @@ function nextRange(state, min, max) {
 
 // src/core/world.ts
 var FIXED_DT = 1 / 60;
-var ISLAND_RADIUS = 40;
+var PLAYABLE_RADIUS = 39;
 var LANTERN_RING_RADIUS = 25;
 var DEFAULT_RANDOM_MOTE_COUNT = 25;
 var DEFAULT_RANDOM_SHADE_COUNT = 3;
@@ -29,11 +29,11 @@ var JUMP_VELOCITY = 6.5;
 var GRAVITY = 18;
 var DEFAULT_TUNING = {
   player_speed: 6,
-  carry_capacity: 5,
+  carry_capacity: 8,
   lantern_cost: 3,
   lantern_count_night1: 5,
-  pickup_radius: 1.5,
-  interact_radius: 2.5,
+  pickup_radius: 2.4,
+  interact_radius: 3,
   pulse_cost: 1,
   pulse_radius: 6,
   night1_duration_s: 300,
@@ -197,17 +197,23 @@ function createWorld(options = {}) {
   }
   const playerPos = scenario?.player?.pos ? [scenario.player.pos[0], scenario.player.pos[1], scenario.player.pos[2]] : [0, 0, 0];
   const initialTimeLeft = scenario?.time_left_s ?? tuning.night1_duration_s;
-  let maxEntityDist = ISLAND_RADIUS;
-  for (const l of lanterns) {
-    maxEntityDist = Math.max(maxEntityDist, Math.hypot(l.pos[0], l.pos[2]) + 10);
+  let maxEntityDist = PLAYABLE_RADIUS;
+  if (scenario) {
+    for (const l of lanterns) {
+      const d = Math.hypot(l.pos[0], l.pos[2]);
+      if (d > PLAYABLE_RADIUS - 1) maxEntityDist = Math.max(maxEntityDist, d + 5);
+    }
+    for (const m of motes) {
+      const d = Math.hypot(m.pos[0], m.pos[2]);
+      if (d > PLAYABLE_RADIUS - 1) maxEntityDist = Math.max(maxEntityDist, d + 5);
+    }
+    for (const s of shades) {
+      const d = Math.hypot(s.pos[0], s.pos[2]);
+      if (d > PLAYABLE_RADIUS - 1) maxEntityDist = Math.max(maxEntityDist, d + 5);
+    }
+    const pd = Math.hypot(playerPos[0], playerPos[2]);
+    if (pd > PLAYABLE_RADIUS - 1) maxEntityDist = Math.max(maxEntityDist, pd + 5);
   }
-  for (const m of motes) {
-    maxEntityDist = Math.max(maxEntityDist, Math.hypot(m.pos[0], m.pos[2]) + 10);
-  }
-  for (const s of shades) {
-    maxEntityDist = Math.max(maxEntityDist, Math.hypot(s.pos[0], s.pos[2]) + 10);
-  }
-  maxEntityDist = Math.max(maxEntityDist, Math.hypot(playerPos[0], playerPos[2]) + 10);
   return {
     seed,
     night,
